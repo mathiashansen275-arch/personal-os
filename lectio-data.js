@@ -20,6 +20,8 @@
       .event.break,.event.time-neutral.break,.event.time-future.break,.event.time-past.break,.event.time-current.break{background:linear-gradient(180deg,rgba(27,18,48,.95),rgba(18,12,34,.98))!important;border-color:#7a55c8!important;color:#d8c9ff!important;text-shadow:none!important;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)!important;filter:none!important;opacity:1!important}
       .event.break .time,.event.break .title{color:#d8c9ff!important;text-shadow:0 1px 2px rgba(0,0,0,.9)!important;filter:none!important;font-weight:1000!important}
       .event.break::before{opacity:0!important}.event.break::after{display:none!important;opacity:0!important}
+      .event.break.time-current::after{display:block!important;height:var(--time-progress,0%)!important;background:linear-gradient(180deg,rgba(190,155,255,.28),rgba(150,105,235,.16))!important;mix-blend-mode:screen!important;opacity:.85!important}
+      .event.break.time-current{box-shadow:0 0 0 1px rgba(216,201,255,.18),0 0 16px rgba(122,85,200,.2),inset 0 0 0 1px rgba(0,0,0,.25)!important}
     `;
     document.head.appendChild(s);
   }
