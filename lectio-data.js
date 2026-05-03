@@ -37,7 +37,7 @@
     const s=document.createElement('style');
     s.id='todo-drag-handle-only';
     s.textContent=`
-      .taskPill{cursor:text!important;user-select:text!important;-webkit-user-drag:none!important}
+      .taskPill{cursor:text!important;user-select:text!important;-webkit-user-drag:none!important;font-size:15.5px!important;font-weight:650!important;letter-spacing:.01em!important}
       .dragCell{cursor:grab!important;user-select:none!important}
       .dragCell:active{cursor:grabbing!important}
       .selectPlaceholder{color:#8f86aa!important}
