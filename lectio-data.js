@@ -1,4 +1,4 @@
-// Loads the latest stable to-do/schedule layer, then applies final visual tweaks.
+// Loads the latest stable to-do/schedule layer, then applies final visual tweaks and automatic task relevance sorting.
 (function(){
   const BASE_URL = 'https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/6421c1c6e5db32787edc6a9329f4073632861d93/lectio-data.js';
 
@@ -26,13 +26,62 @@
     });
   }
 
+  function normalizeTaskDay(v){
+    const weekdayNames=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const today=weekdayNames[new Date().getDay()];
+    if(!v||v==='Later'||v===today)return'Today';
+    return v;
+  }
+
+  function taskDayRank(v){
+    const weekdayNames=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const todayIdx=new Date().getDay();
+    const d=normalizeTaskDay(v);
+    if(d==='Today')return 0;
+    const idx=weekdayNames.indexOf(d);
+    if(idx<0)return 99;
+    const diff=(idx-todayIdx+7)%7;
+    return diff===0?0:diff;
+  }
+
+  function autoSortTasksByRelevance(){
+    if(!Array.isArray(window.tasks)&&!(typeof tasks!=='undefined'&&Array.isArray(tasks)))return false;
+    const arr=window.tasks||tasks;
+    const before=arr.map(t=>t.id+':' + normalizeTaskDay(t.day)).join('|');
+    arr.forEach((t,i)=>{t.__stableOrder=i;t.day=normalizeTaskDay(t.day)});
+    arr.sort((a,b)=>taskDayRank(a.day)-taskDayRank(b.day)+(a.__stableOrder-b.__stableOrder)/10000);
+    arr.forEach(t=>delete t.__stableOrder);
+    const after=arr.map(t=>t.id+':' + normalizeTaskDay(t.day)).join('|');
+    if(after!==before){
+      try{localStorage.setItem('personalOS.tasks.v1',JSON.stringify(arr))}catch(e){}
+      return true;
+    }
+    return false;
+  }
+
+  function patchTaskSorting(){
+    if(window.__todoAutoSortPatched)return;
+    window.__todoAutoSortPatched=true;
+    const oldSave=window.saveTasks || (typeof saveTasks==='function' ? saveTasks : null);
+    if(typeof oldSave==='function'){
+      saveTasks=function(){autoSortTasksByRelevance();return oldSave.apply(this,arguments)};
+      window.saveTasks=saveTasks;
+    }
+    const oldRender=window.renderTasks || (typeof renderTasks==='function' ? renderTasks : null);
+    if(typeof oldRender==='function'){
+      renderTasks=function(){autoSortTasksByRelevance();const out=oldRender.apply(this,arguments);setTimeout(()=>{applyFinalTweaks();renameTaskHeader()},0);return out};
+      window.renderTasks=renderTasks;
+      setTimeout(()=>{try{renderTasks()}catch(e){}},50);
+    }
+  }
+
   function patchRenderTasks(){
-    const apply=()=>{applyFinalTweaks();renameTaskHeader()};
+    const apply=()=>{applyFinalTweaks();renameTaskHeader();patchTaskSorting()};
     apply();
     const old=window.renderTasks || (typeof renderTasks==='function' ? renderTasks : null);
     if(typeof old==='function'&&!window.__todoFinalTweaksPatched){
       window.__todoFinalTweaksPatched=true;
-      renderTasks=function(){const out=old.apply(this,arguments);setTimeout(apply,0);return out};
+      renderTasks=function(){autoSortTasksByRelevance();const out=old.apply(this,arguments);setTimeout(apply,0);return out};
       window.renderTasks=renderTasks;
       setTimeout(()=>{try{renderTasks()}catch(e){apply()}},50);
     }
