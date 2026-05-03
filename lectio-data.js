@@ -17,8 +17,9 @@
       .event .time,.event .title{position:relative;z-index:3}.event::before,.event::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;transition:opacity .08s ease,height .08s linear}.event::before{background:#000;opacity:0}.event::after{height:var(--time-progress,0%);bottom:auto;background:rgba(255,255,255,.16);mix-blend-mode:screen;opacity:0}.event.time-neutral{filter:none!important;opacity:1!important}.event.time-neutral::before{opacity:0!important}.event.time-neutral::after{opacity:0!important}.event.time-future{filter:saturate(.9) brightness(.89);opacity:.94}.event.time-future::before{opacity:.16}.event.time-past{filter:saturate(1.15) brightness(1.08);opacity:1}.event.time-past::before{opacity:0}.event.time-past::after{height:100%;opacity:.16}.event.time-current{filter:saturate(1.28) brightness(1.16);transform:translateY(-1px);box-shadow:0 0 0 1px rgba(255,255,255,.14),0 0 20px rgba(100,140,255,.22),0 10px 24px rgba(0,0,0,.42)!important}.event.time-current::before{opacity:.04}.event.time-current::after{opacity:.68}.event.time-current::marker{display:none}
       .event.time-current:has(.title)::before{box-shadow:inset 0 0 14px rgba(255,255,255,.055)}
       .event.time-current .time::after{content:""!important}
-      .event.break,.event.time-neutral.break,.event.time-future.break,.event.time-past.break,.event.time-current.break{background:rgba(118,84,190,.72)!important;border-color:#8a62dc!important;color:#10091d!important;text-shadow:none!important}
-      .event.break .time,.event.break .title{color:#10091d!important;text-shadow:none!important;filter:none!important}
+      .event.break,.event.time-neutral.break,.event.time-future.break,.event.time-past.break,.event.time-current.break{background:rgba(30,24,48,.74)!important;border-color:#6f4bae!important;color:#cdb8ff!important;text-shadow:none!important;box-shadow:none!important}
+      .event.break .time,.event.break .title{color:#cdb8ff!important;text-shadow:0 1px 2px rgba(0,0,0,.9)!important;filter:none!important}
+      .event.break::after{background:rgba(255,255,255,.07)!important;opacity:0!important}.event.break.time-current::after{opacity:.22!important}.event.break.time-past::after{opacity:.08!important}
     `;
     document.head.appendChild(s);
   }
