@@ -33,11 +33,11 @@
   }
 
   function resizeTaskPill(el){
-    const len=String(el.value||'').length;
-    const w=Math.max(12,Math.min(110,len+4));
-    el.style.width=w+'ch';
+    el.style.width='calc(100% - 42px)';
+    el.style.maxWidth='calc(100% - 42px)';
     el.style.height='40px';
-    if(el.scrollHeight>44||len>104)el.style.height=Math.min(68,Math.max(44,el.scrollHeight))+'px';
+    const needed=Math.max(40,Math.min(68,el.scrollHeight));
+    if(needed>44)el.style.height=needed+'px';
   }
 
   function upgradeTaskTextareas(){
@@ -81,12 +81,12 @@
     const s=document.createElement('style');
     s.id='todo-drag-handle-only';
     s.textContent=`
-      .taskPill{cursor:text!important;user-select:text!important;-webkit-user-drag:none!important;font-size:16px!important;font-weight:650!important;letter-spacing:.01em!important;max-width:calc(100% - 42px)!important;white-space:normal!important;line-height:20px!important;resize:none!important;overflow:hidden!important;box-sizing:border-box!important;vertical-align:middle!important;padding-top:9px!important;padding-bottom:9px!important}
-      textarea.taskPill{font-family:inherit!important;display:inline-block!important;min-height:40px!important;border-radius:20px!important}
-      .todoMain .taskText{width:100%!important;max-width:none!important}
-      .todoRow td{vertical-align:middle!important}
+      #todoView .todoMain .taskText{width:100%!important;max-width:none!important;display:flex!important;align-items:center!important;gap:10px!important}
+      #todoView .taskPill{cursor:text!important;user-select:text!important;-webkit-user-drag:none!important;font-size:16px!important;font-weight:650!important;letter-spacing:.01em!important;width:calc(100% - 42px)!important;max-width:calc(100% - 42px)!important;min-width:280px!important;white-space:normal!important;line-height:20px!important;resize:none!important;overflow:hidden!important;box-sizing:border-box!important;vertical-align:middle!important;padding-top:9px!important;padding-bottom:9px!important}
+      #todoView textarea.taskPill{font-family:inherit!important;display:block!important;min-height:40px!important;border-radius:20px!important}
+      #todoView .todoRow td{vertical-align:middle!important}
       .todoDayTop{font-size:13px!important}
-      .dragCell{cursor:grab!important;user-select:none!important}
+      .dragCell{cursor:grab!important;user-select:none!important;flex:0 0 24px!important}
       .dragCell:active{cursor:grabbing!important}
       .selectPlaceholder{color:#8f86aa!important}
     `;
