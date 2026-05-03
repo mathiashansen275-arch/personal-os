@@ -32,12 +32,58 @@
     });
   }
 
+  function resizeTaskPill(el){
+    const len=String(el.value||'').length;
+    const w=Math.max(12,Math.min(62,len+4));
+    el.style.width=w+'ch';
+    el.style.height='40px';
+    if(el.scrollHeight>44||len>58)el.style.height=Math.min(68,Math.max(44,el.scrollHeight))+'px';
+  }
+
+  function upgradeTaskTextareas(){
+    document.querySelectorAll('#todoView input.taskPill').forEach(input=>{
+      const row=input.closest('.todoRow');
+      const ta=document.createElement('textarea');
+      ta.className=input.className;
+      ta.value=input.value||'';
+      ta.setAttribute('rows','1');
+      ta.setAttribute('spellcheck','false');
+      input.replaceWith(ta);
+      resizeTaskPill(ta);
+      ta.addEventListener('input',()=>{
+        resizeTaskPill(ta);
+        if(row&&typeof tasks!=='undefined'&&Array.isArray(tasks)){
+          const t=tasks.find(x=>x.id===row.dataset.id);
+          if(t)t.text=ta.value;
+        }
+      });
+      ta.addEventListener('change',()=>{
+        if(typeof tasks!=='undefined'&&Array.isArray(tasks)){
+          const t=row?tasks.find(x=>x.id===row.dataset.id):null;
+          if(t){
+            t.text=ta.value;
+            if(isDefaultTaskText(t.text))t.day='';
+            else if(!t.day)t.day='Today';
+          }
+          try{localStorage.setItem('personalOS.tasks.v1',JSON.stringify(tasks))}catch(e){}
+        }
+        if(typeof renderTasks==='function')renderTasks();
+        if(typeof renderProductivity==='function')renderProductivity();
+      });
+      ta.addEventListener('dragstart',e=>e.preventDefault(),true);
+      ta.addEventListener('mousedown',e=>e.stopPropagation(),true);
+    });
+    document.querySelectorAll('#todoView textarea.taskPill').forEach(resizeTaskPill);
+  }
+
   function applyDragHandleOnly(){
     document.querySelectorAll('#todo-drag-handle-only').forEach(x=>x.remove());
     const s=document.createElement('style');
     s.id='todo-drag-handle-only';
     s.textContent=`
-      .taskPill{cursor:text!important;user-select:text!important;-webkit-user-drag:none!important;font-size:16px!important;font-weight:650!important;letter-spacing:.01em!important}
+      .taskPill{cursor:text!important;user-select:text!important;-webkit-user-drag:none!important;font-size:16px!important;font-weight:650!important;letter-spacing:.01em!important;max-width:min(864px,84vw)!important;white-space:normal!important;line-height:20px!important;resize:none!important;overflow:hidden!important;box-sizing:border-box!important;vertical-align:middle!important;padding-top:9px!important;padding-bottom:9px!important}
+      textarea.taskPill{font-family:inherit!important;display:inline-block!important;min-height:40px!important;border-radius:20px!important}
+      .todoRow td{vertical-align:middle!important}
       .todoDayTop{font-size:13px!important}
       .dragCell{cursor:grab!important;user-select:none!important}
       .dragCell:active{cursor:grabbing!important}
@@ -45,6 +91,7 @@
     `;
     document.head.appendChild(s);
 
+    upgradeTaskTextareas();
     document.querySelectorAll('#todoView .todoRow').forEach(row=>{
       row.draggable=false;
       const handle=row.querySelector('.dragCell');
