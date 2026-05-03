@@ -13,10 +13,10 @@
       .calendar{border-color:#151827!important;background:#020307!important}.timecol,.day{background:#030409!important;border-right-color:#151827!important}.head{background:#050711!important;border-bottom-color:#151827!important}.todayCol .head{color:#c7d2ff!important;box-shadow:inset 0 2px 0 #445dff!important}.grid{background:linear-gradient(to bottom,rgba(255,255,255,.035) 1px,transparent 1px) 0 0/100% calc(60 * var(--px))!important}.tlabel{text-shadow:0 0 8px rgba(90,120,255,.45)!important}
       button,.badge,.tab,.cellInput,.cellSelect,.noteArea,input,select,.checkline{border-color:#202946!important;background:#050711!important}.tab.active,.addBtn,.primary{border-color:#384bff!important;background:linear-gradient(180deg,#111a38,#070912)!important}.revertBtn,.synced{border-color:#126949!important;background:rgba(16,194,119,.06)!important}.table{background:#05070c!important;border-color:#161d2d!important}.table th{background:#080b13!important}.table th,.table td{border-color:#161d2d!important}
       .panelHead .muted{display:none!important}
-      .event{isolation:isolate;transition:filter .35s ease,box-shadow .35s ease,transform .2s ease,opacity .35s ease!important}
-      .event .time,.event .title{position:relative;z-index:3}.event::before,.event::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;transition:opacity .45s ease,height .7s linear}.event::before{background:#000;opacity:.28}.event::after{height:var(--time-progress,0%);bottom:auto;background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,.08));mix-blend-mode:screen;opacity:0}.event.time-future{filter:saturate(.58) brightness(.52);opacity:.82}.event.time-future::before{opacity:.46}.event.time-past{filter:saturate(1.15) brightness(1.08);opacity:1}.event.time-past::before{opacity:0}.event.time-past::after{height:100%;opacity:.16}.event.time-current{filter:saturate(1.45) brightness(1.24);transform:translateY(-1px);box-shadow:0 0 0 1px rgba(255,255,255,.18),0 0 24px rgba(100,140,255,.26),0 10px 26px rgba(0,0,0,.48)!important}.event.time-current::before{opacity:.08}.event.time-current::after{opacity:.92}.event.time-current::marker{display:none}
-      .event.time-current:has(.title)::before{box-shadow:inset 0 0 18px rgba(255,255,255,.08)}
-      .event.time-current .time::after{content:"  •  " attr(data-progress);color:#fff;text-shadow:0 0 10px rgba(255,255,255,.55)}
+      .event{isolation:isolate;transition:filter .45s ease,box-shadow .45s ease,transform .2s ease,opacity .45s ease!important}
+      .event .time,.event .title{position:relative;z-index:3}.event::before,.event::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;transition:opacity .55s ease,height .9s linear}.event::before{background:#000;opacity:.18}.event::after{height:var(--time-progress,0%);bottom:auto;background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,.045));mix-blend-mode:screen;opacity:0}.event.time-future{filter:saturate(.78) brightness(.74);opacity:.9}.event.time-future::before{opacity:.24}.event.time-past{filter:saturate(1.06) brightness(1.02);opacity:1}.event.time-past::before{opacity:.04}.event.time-past::after{height:100%;opacity:.08}.event.time-current{filter:saturate(1.18) brightness(1.1);transform:translateY(-1px);box-shadow:0 0 0 1px rgba(255,255,255,.12),0 0 18px rgba(100,140,255,.18),0 10px 24px rgba(0,0,0,.42)!important}.event.time-current::before{opacity:.06}.event.time-current::after{opacity:.62}.event.time-current::marker{display:none}
+      .event.time-current:has(.title)::before{box-shadow:inset 0 0 14px rgba(255,255,255,.055)}
+      .event.time-current .time::after{content:""!important}
     `;
     document.head.appendChild(s);
   }
@@ -32,7 +32,7 @@
     else if(nowMin<start){p=0;cls='time-future'}
     else{p=Math.max(0,Math.min(100,((nowMin-start)/(end-start))*100));cls='time-current'}
     el.classList.remove('time-past','time-current','time-future');el.classList.add(cls);el.style.setProperty('--time-progress',p.toFixed(1)+'%');
-    const time=el.querySelector('.time'); if(time) time.dataset.progress=Math.round(p)+'%';
+    const time=el.querySelector('.time'); if(time) delete time.dataset.progress;
   }
   function refreshProgress(){document.querySelectorAll('.event[data-date][data-start][data-end]').forEach(classify)}
   function patchEventRenderer(){
