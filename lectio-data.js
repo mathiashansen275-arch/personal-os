@@ -1,6 +1,36 @@
-// Loads the latest stable to-do/schedule layer, then disables dragging from inside task text pills.
+// Loads the latest stable to-do/schedule layer, then applies final to-do behavior fixes.
 (function(){
   const BASE_URL = 'https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/4512f9bdfa9353599566ce6f51851ec42e1f8392/lectio-data.js';
+
+  function isDefaultTaskText(v){
+    const s=String(v||'').trim().toLowerCase();
+    return !s || s==='new task';
+  }
+
+  function forceNewTasksToSelectDay(){
+    if(typeof tasks!=='undefined' && Array.isArray(tasks)){
+      let changed=false;
+      tasks.forEach(t=>{
+        if(isDefaultTaskText(t.text) && t.day!==''){
+          t.day='';
+          changed=true;
+        }
+      });
+      if(changed){
+        try{localStorage.setItem('personalOS.tasks.v1',JSON.stringify(tasks))}catch(e){}
+      }
+    }
+
+    document.querySelectorAll('#todoView .todoRow').forEach(row=>{
+      const input=row.querySelector('.taskPill');
+      const select=row.querySelector('.cellSelect');
+      if(!input||!select)return;
+      if(isDefaultTaskText(input.value)){
+        select.value='';
+        select.classList.add('selectPlaceholder');
+      }
+    });
+  }
 
   function applyDragHandleOnly(){
     document.querySelectorAll('#todo-drag-handle-only').forEach(x=>x.remove());
@@ -10,6 +40,7 @@
       .taskPill{cursor:text!important;user-select:text!important;-webkit-user-drag:none!important}
       .dragCell{cursor:grab!important;user-select:none!important}
       .dragCell:active{cursor:grabbing!important}
+      .selectPlaceholder{color:#8f86aa!important}
     `;
     document.head.appendChild(s);
 
@@ -38,20 +69,40 @@
     });
   }
 
-  function patchRenderTasks(){
-    const old=window.renderTasks || (typeof renderTasks==='function' ? renderTasks : null);
-    if(typeof old==='function'&&!window.__dragHandleOnlyPatched){
-      window.__dragHandleOnlyPatched=true;
-      renderTasks=function(){const out=old.apply(this,arguments);setTimeout(applyDragHandleOnly,0);return out};
+  function patchTasks(){
+    const apply=()=>{forceNewTasksToSelectDay();applyDragHandleOnly()};
+    const oldRender=window.renderTasks || (typeof renderTasks==='function' ? renderTasks : null);
+    if(typeof oldRender==='function'&&!window.__newTaskSelectDayPatched){
+      window.__newTaskSelectDayPatched=true;
+      renderTasks=function(){
+        if(typeof tasks!=='undefined' && Array.isArray(tasks)){
+          tasks.forEach(t=>{if(isDefaultTaskText(t.text))t.day=''});
+        }
+        const out=oldRender.apply(this,arguments);
+        setTimeout(apply,0);
+        return out;
+      };
       window.renderTasks=renderTasks;
-      setTimeout(()=>{try{renderTasks()}catch(e){applyDragHandleOnly()}},50);
     }
-    applyDragHandleOnly();
-    setInterval(applyDragHandleOnly,1000);
+
+    const oldSave=window.saveTasks || (typeof saveTasks==='function' ? saveTasks : null);
+    if(typeof oldSave==='function'&&!window.__newTaskSavePatched){
+      window.__newTaskSavePatched=true;
+      saveTasks=function(){
+        if(typeof tasks!=='undefined' && Array.isArray(tasks)){
+          tasks.forEach(t=>{if(isDefaultTaskText(t.text))t.day=''});
+        }
+        return oldSave.apply(this,arguments);
+      };
+      window.saveTasks=saveTasks;
+    }
+
+    setTimeout(()=>{try{renderTasks()}catch(e){apply()}},50);
+    setInterval(apply,700);
   }
 
   fetch(BASE_URL,{cache:'no-store'}).then(r=>r.text()).then(code=>{
     (0,eval)(code);
-    setTimeout(patchRenderTasks,800);
-  }).catch(()=>setTimeout(patchRenderTasks,800));
+    setTimeout(patchTasks,900);
+  }).catch(()=>setTimeout(patchTasks,900));
 })();
