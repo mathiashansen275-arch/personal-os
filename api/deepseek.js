@@ -6,6 +6,11 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+function numEnv(name) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) ? value : 0;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
 
@@ -56,7 +61,17 @@ export default async function handler(req, res) {
 
   const content = data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : '{}';
   try {
-    return sendJson(res, 200, JSON.parse(content));
+    const parsed = JSON.parse(content);
+    const usage = data.usage || {};
+    const inputTokens = Number(usage.prompt_tokens || usage.input_tokens || 0);
+    const outputTokens = Number(usage.completion_tokens || usage.output_tokens || 0);
+    const inputEurPer1M = numEnv('DEEPSEEK_INPUT_EUR_PER_1M');
+    const outputEurPer1M = numEnv('DEEPSEEK_OUTPUT_EUR_PER_1M');
+    const costEUR = (inputTokens / 1000000 * inputEurPer1M) + (outputTokens / 1000000 * outputEurPer1M);
+    parsed.usage = { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
+    parsed.costEUR = costEUR;
+    parsed.costPricingConfigured = inputEurPer1M > 0 || outputEurPer1M > 0;
+    return sendJson(res, 200, parsed);
   } catch {
     return sendJson(res, 502, { error: 'Model returned invalid JSON', raw: content });
   }
