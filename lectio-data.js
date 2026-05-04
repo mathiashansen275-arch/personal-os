@@ -1,9 +1,9 @@
-// Loads the latest stable to-do/schedule layer, then brightens blue schedule blocks.
+// Loads the latest stable to-do/schedule layer, then brightens blue schedule blocks without blinking.
 (function(){
   const BASE_URL = 'https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/5d487999a2ddc2729ba69cc573e0679244ff3ec9/lectio-data.js';
 
   function applyBlueBrightnessFix(){
-    document.querySelectorAll('#blue-brightness-fix').forEach(x=>x.remove());
+    if(document.getElementById('blue-brightness-fix'))return;
     const s=document.createElement('style');
     s.id='blue-brightness-fix';
     s.textContent=`
@@ -28,7 +28,7 @@
         opacity:1!important;
       }
       #scheduleView .event.school.time-current{
-        filter:saturate(1.42) brightness(1.32)!important;
+        filter:saturate(1.42) brightness(1.42)!important;
         box-shadow:0 0 0 1px rgba(57,163,255,.34),0 0 24px rgba(22,140,255,.30),0 10px 26px rgba(0,0,0,.48)!important;
       }
       #scheduleView .event.school.time-current::after,
@@ -36,6 +36,11 @@
       #scheduleView .event.school .liveProgressFill{
         background:linear-gradient(180deg,rgba(57,163,255,.40),rgba(57,163,255,.16))!important;
         mix-blend-mode:screen!important;
+      }
+      #scheduleView .event.school.time-current::after,
+      #scheduleView .event.school.time-current .liveProgressFill{
+        height:100%!important;
+        opacity:.90!important;
       }
       #scheduleView .event.homework,
       #scheduleView .event.trip{
@@ -53,9 +58,9 @@
   fetch(BASE_URL,{cache:'no-store'}).then(r=>r.text()).then(code=>{
     (0,eval)(code);
     setTimeout(applyBlueBrightnessFix,950);
-    setInterval(applyBlueBrightnessFix,900);
+    setInterval(applyBlueBrightnessFix,5000);
   }).catch(()=>{
     setTimeout(applyBlueBrightnessFix,950);
-    setInterval(applyBlueBrightnessFix,900);
+    setInterval(applyBlueBrightnessFix,5000);
   });
 })();
