@@ -2,6 +2,8 @@
 (function(){
   const BASE_URL = 'https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/5d487999a2ddc2729ba69cc573e0679244ff3ec9/lectio-data.js';
 
+  let todoObserverStarted=false;
+
   function hideOldTodoImmediately(){
     if(!document.getElementById('todo-hard-no-flash')){
       const s=document.createElement('style');
@@ -9,20 +11,28 @@
       s.textContent=`
         #todoView .panel:not(:has(.todoLayout)){opacity:0!important;visibility:hidden!important;min-height:760px!important}
         #todoView .panel:has(.todoLayout){opacity:1!important;visibility:visible!important;transition:none!important}
-      `;
-      document.head.appendChild(s);
-    }
-    if(!document.getElementById('todo-no-flash')){
-      const s=document.createElement('style');
-      s.id='todo-no-flash';
-      s.textContent=`
-        #todoView .panel:not(:has(.todoLayout)){opacity:0!important;visibility:hidden!important;min-height:760px!important}
-        #todoView .panel:has(.todoLayout){opacity:1!important;visibility:visible!important;transition:none!important}
+        #todoView.is-rendering .panel{opacity:0!important;visibility:hidden!important}
       `;
       document.head.appendChild(s);
     }
   }
   hideOldTodoImmediately();
+
+  function taskNeedsTwoLines(el){
+    const v=String(el.value||'');
+    return v.length>74 || (el.scrollHeight>44 && el.tagName==='TEXTAREA');
+  }
+
+  function fixTaskHeights(){
+    document.querySelectorAll('#todoView .taskPill,#todoView .taskTextInput').forEach(el=>{
+      const two=taskNeedsTwoLines(el);
+      el.style.height=two?'60px':'40px';
+      el.style.minHeight=two?'60px':'40px';
+      el.style.borderRadius=two?'22px':'999px';
+      const tr=el.closest('tr');
+      if(tr) tr.classList.toggle('taskTwoLine',two);
+    });
+  }
 
   function applyUiPolish(){
     document.querySelectorAll('#final-ui-polish').forEach(x=>x.remove());
@@ -39,14 +49,14 @@
       #todoView .todoMain .panelTitle{line-height:1!important;margin:0!important}
       #todoView .todoMain .table{table-layout:fixed!important;width:100%!important}
       #todoView .todoMain .table th{padding-top:8px!important;padding-bottom:8px!important}
-      #todoView .todoMain .table td{padding-top:7px!important;padding-bottom:7px!important;vertical-align:middle!important}
+      #todoView .todoMain .table td{padding-top:8px!important;padding-bottom:8px!important;vertical-align:middle!important}
       #todoView .todoMain .table th:nth-child(1),#todoView .todoMain .table td:nth-child(1){width:60px!important;min-width:60px!important;max-width:60px!important}
       #todoView .todoMain .table th:nth-child(3),#todoView .todoMain .table td:nth-child(3){width:170px!important;min-width:170px!important;max-width:170px!important}
       #todoView .todoMain .table th:nth-child(4),#todoView .todoMain .table td:nth-child(4){width:112px!important;min-width:112px!important;max-width:112px!important}
       #todoView .todoMain .taskText{width:100%!important;max-width:none!important;display:flex!important;align-items:center!important;gap:10px!important;overflow:visible!important}
-      #todoView .taskTextInput,#todoView .taskPill,#todoView input.taskPill,#todoView textarea.taskPill{font-size:16px!important;font-weight:580!important;letter-spacing:.005em!important;width:min(782px,calc(100% - 44px))!important;max-width:min(782px,calc(100% - 44px))!important;min-width:280px!important;min-height:58px!important;height:58px!important;line-height:20px!important;padding-top:8px!important;padding-bottom:8px!important;border-radius:21px!important;box-sizing:border-box!important;transition:none!important;resize:none!important;overflow:hidden!important;white-space:normal!important;font-family:inherit!important;vertical-align:middle!important}
-      #todoView input.taskPill,#todoView .taskTextInput{text-overflow:ellipsis!important;white-space:nowrap!important}
+      #todoView .taskTextInput,#todoView .taskPill,#todoView input.taskPill,#todoView textarea.taskPill{font-size:16px!important;font-weight:580!important;letter-spacing:.005em!important;width:min(782px,calc(100% - 44px))!important;max-width:min(782px,calc(100% - 44px))!important;min-width:280px!important;min-height:40px!important;height:40px!important;line-height:20px!important;padding-top:8px!important;padding-bottom:8px!important;border-radius:999px!important;box-sizing:border-box!important;transition:none!important;resize:none!important;overflow:hidden!important;white-space:normal!important;font-family:inherit!important;vertical-align:middle!important}
       #todoView textarea.taskPill{display:block!important;white-space:pre-wrap!important}
+      #todoView tr.taskTwoLine .taskPill,#todoView tr.taskTwoLine .taskTextInput,#todoView tr.taskTwoLine textarea.taskPill{height:60px!important;min-height:60px!important;border-radius:22px!important}
       #todoView .doneRow .taskPill,#todoView .doneRow .taskTextInput,#todoView .doneRow textarea.taskPill{font-weight:580!important}
       #todoView .cellSelect{height:40px!important;font-weight:800!important;width:150px!important;min-width:150px!important;max-width:150px!important;padding-left:14px!important;padding-right:28px!important;transition:none!important}
       #todoView .taskCheck{width:20px!important;height:20px!important}
@@ -54,6 +64,7 @@
       #todoView .todoRow,#todoView .todoRow td{transition:none!important}
     `;
     document.head.appendChild(s);
+    fixTaskHeights();
   }
 
   function patchModalClose(){
@@ -69,19 +80,36 @@
     }
   }
 
+  function revealTodo(){
+    requestAnimationFrame(()=>{
+      applyUiPolish();
+      document.getElementById('todoView')?.classList.remove('is-rendering');
+    });
+  }
+
   function patchTodoRenderStability(){
     const oldRender=window.renderTasks || (typeof renderTasks==='function' ? renderTasks : null);
-    if(typeof oldRender==='function'&&!window.__stableTodoNoClsPatched){
-      window.__stableTodoNoClsPatched=true;
+    if(typeof oldRender==='function'&&!window.__stableTodoNoClsPatchedV2){
+      window.__stableTodoNoClsPatchedV2=true;
       renderTasks=function(){
+        const tv=document.getElementById('todoView');
+        if(tv) tv.classList.add('is-rendering');
         hideOldTodoImmediately();
         applyUiPolish();
         const out=oldRender.apply(this,arguments);
         applyUiPolish();
-        requestAnimationFrame(()=>applyUiPolish());
+        revealTodo();
+        setTimeout(revealTodo,0);
         return out;
       };
       window.renderTasks=renderTasks;
+    }
+    if(!todoObserverStarted){
+      todoObserverStarted=true;
+      const tv=document.getElementById('todoView');
+      if(tv){
+        new MutationObserver(()=>{applyUiPolish();fixTaskHeights()}).observe(tv,{childList:true,subtree:true,attributes:true,attributeFilter:['class','style']});
+      }
     }
   }
 
@@ -90,50 +118,17 @@
     const s=document.createElement('style');
     s.id='blue-brightness-fix';
     s.textContent=`
-      #scheduleView .event.school{
-        background:rgba(12,38,76,.86)!important;
-        border-color:#168cff!important;
-        color:#39a3ff!important;
-      }
-      #scheduleView .event.school .time,
-      #scheduleView .event.school .title{color:#39a3ff!important}
-      #scheduleView .event.school.time-neutral{
-        filter:saturate(1.12) brightness(1.14)!important;
-        opacity:1!important;
-      }
-      #scheduleView .event.school.time-future{
-        filter:saturate(1.02) brightness(.90)!important;
-        opacity:.96!important;
-      }
+      #scheduleView .event.school{background:rgba(12,38,76,.86)!important;border-color:#168cff!important;color:#39a3ff!important}
+      #scheduleView .event.school .time,#scheduleView .event.school .title{color:#39a3ff!important}
+      #scheduleView .event.school.time-neutral{filter:saturate(1.12) brightness(1.14)!important;opacity:1!important}
+      #scheduleView .event.school.time-future{filter:saturate(1.02) brightness(.90)!important;opacity:.96!important}
       #scheduleView .event.school.time-future::before{opacity:.20!important}
-      #scheduleView .event.school.time-past{
-        filter:saturate(1.24) brightness(1.22)!important;
-        opacity:1!important;
-      }
-      #scheduleView .event.school.time-current{
-        filter:saturate(1.42) brightness(1.42)!important;
-        box-shadow:0 0 0 1px rgba(57,163,255,.34),0 0 24px rgba(22,140,255,.30),0 10px 26px rgba(0,0,0,.48)!important;
-      }
-      #scheduleView .event.school.time-current::after,
-      #scheduleView .event.school.time-past::after,
-      #scheduleView .event.school .liveProgressFill{
-        background:linear-gradient(180deg,rgba(57,163,255,.40),rgba(57,163,255,.16))!important;
-        mix-blend-mode:screen!important;
-      }
-      #scheduleView .event.school.time-current::after,
-      #scheduleView .event.school.time-current .liveProgressFill{
-        height:100%!important;
-        opacity:.90!important;
-      }
-      #scheduleView .event.homework,
-      #scheduleView .event.trip{
-        filter:brightness(1.12) saturate(1.06)!important;
-      }
-      #scheduleView .event.homework.time-future,
-      #scheduleView .event.trip.time-future{
-        filter:saturate(1.02) brightness(.90)!important;
-        opacity:.96!important;
-      }
+      #scheduleView .event.school.time-past{filter:saturate(1.24) brightness(1.22)!important;opacity:1!important}
+      #scheduleView .event.school.time-current{filter:saturate(1.42) brightness(1.42)!important;box-shadow:0 0 0 1px rgba(57,163,255,.34),0 0 24px rgba(22,140,255,.30),0 10px 26px rgba(0,0,0,.48)!important}
+      #scheduleView .event.school.time-current::after,#scheduleView .event.school.time-past::after,#scheduleView .event.school .liveProgressFill{background:linear-gradient(180deg,rgba(57,163,255,.40),rgba(57,163,255,.16))!important;mix-blend-mode:screen!important}
+      #scheduleView .event.school.time-current::after,#scheduleView .event.school.time-current .liveProgressFill{height:100%!important;opacity:.90!important}
+      #scheduleView .event.homework,#scheduleView .event.trip{filter:brightness(1.12) saturate(1.06)!important}
+      #scheduleView .event.homework.time-future,#scheduleView .event.trip.time-future{filter:saturate(1.02) brightness(.90)!important;opacity:.96!important}
     `;
     document.head.appendChild(s);
   }
@@ -153,9 +148,9 @@
     setTimeout(applyAll,50);
     setTimeout(applyAll,300);
     setTimeout(applyAll,950);
-    setInterval(applyAll,1500);
+    setInterval(applyAll,800);
   }).catch(()=>{
     applyAll();
-    setInterval(applyAll,1500);
+    setInterval(applyAll,800);
   });
 })();
