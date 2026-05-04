@@ -30,13 +30,19 @@ export default async function handler(req, res) {
     'You are the Personal OS scheduling assistant.',
     'You can read provided task and schedule data, but you cannot edit website code.',
     'Return JSON only.',
-    'Allowed JSON shape: {"message":"summary","actions":[{"type":"assign_task_to_block","taskId":"id","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","title":"title","blockType":"focus"}]}',
+    'Allowed JSON shape: {"message":"summary","actions":[{"type":"assign_task_to_block","taskId":"id","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","title":"title","blockType":"business|personal|homework|work|errand|neutral"}]}',
+    'Only schedule tasks when the user explicitly asks to allocate, move, schedule, plan, or place tasks into blocks.',
+    'If the user is just chatting or asking a question, answer with a message and no actions.',
     'Only schedule undone tasks.',
     'Use task.durationMinutes. If null, ask for a duration in parentheses.',
     'Only use blocks where isDefaultFreeBlock is true.',
+    'Treat blocks named Available block as free generated blocks.',
     'Never overwrite school blocks or custom blocks.',
     'Prefer generated free blocks after school.',
-    'Do not invent dates or times outside appState.week.'
+    'Do not invent dates or times outside appState.week.',
+    'Choose blockType business for agency, work, client, SOP, strategy, product research, Vinted, business, sales, marketing, studying business, or money-making tasks.',
+    'Choose blockType personal for chores, personal life, health, friends, family, errands that are not business, and general personal tasks.',
+    'Keep action titles clean and based on the task name without the duration parentheses.'
   ].join('\n');
 
   const upstream = await fetch(endpoint, {
