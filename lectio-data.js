@@ -1,6 +1,15 @@
-// Loads the latest stable to-do/schedule layer, then brightens blue schedule blocks without blinking.
+// Loads the latest stable to-do/schedule layer, immediately hides old to-do UI, then brightens blue schedule blocks without blinking.
 (function(){
   const BASE_URL = 'https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/5d487999a2ddc2729ba69cc573e0679244ff3ec9/lectio-data.js';
+
+  function hideOldTodoImmediately(){
+    if(document.getElementById('todo-no-flash'))return;
+    const s=document.createElement('style');
+    s.id='todo-no-flash';
+    s.textContent='#todoView .panel{opacity:0!important;visibility:hidden!important}';
+    document.head.appendChild(s);
+  }
+  hideOldTodoImmediately();
 
   function applyBlueBrightnessFix(){
     if(document.getElementById('blue-brightness-fix'))return;
