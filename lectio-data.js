@@ -1,14 +1,14 @@
-// Loader for the latest stable schedule/to-do layer plus the DeepSeek assistant.
+// Loader for the latest stable Personal OS layer plus the DeepSeek assistant.
 (function(){
-  const STABLE_LAYER_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/ff7e25cc7c0ae552cacb2430c963bc932934a3f0/lectio-data.js';
-  function add(src){
+  const STABLE_LAYER_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/5d487999a2ddc2729ba69cc573e0679244ff3ec9/lectio-data.js';
+  function load(src,onload){
     const s=document.createElement('script');
     s.src=src;
     s.async=false;
+    if(onload)s.onload=onload;
     document.head.appendChild(s);
-    return s;
   }
-  const stable=add(STABLE_LAYER_URL);
-  stable.onload=function(){add('./assistant.js?v='+Date.now())};
-  stable.onerror=function(){add('./assistant.js?v='+Date.now())};
+  load(STABLE_LAYER_URL,function(){
+    load('./assistant.js?v='+Date.now());
+  });
 })();
