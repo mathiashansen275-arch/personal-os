@@ -9,8 +9,8 @@
       style.textContent=`
         .app{position:relative!important}
         .aiChatButton{left:13px!important}
-        .aiCostBadge{position:absolute!important;top:136px!important;right:24px!important;z-index:40!important}
-        .aiChatHeader{border-bottom:none!important;font-weight:650!important}
+        .aiCostBadge{position:absolute!important;top:126px!important;right:24px!important;z-index:40!important}
+        .aiChatHeader{border-bottom:1px solid #2b2147!important;font-weight:650!important}
         #aiChatInput,.aiChatInput input{font-weight:500!important;letter-spacing:0!important}
         #aiChatInput::placeholder{font-weight:650!important;opacity:.72!important}
         .aiMsg{font-weight:500!important;letter-spacing:0!important;max-width:100%!important;align-self:stretch!important;box-sizing:border-box!important}
