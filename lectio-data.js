@@ -3,19 +3,29 @@
   const BASE_URL = 'https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/5d487999a2ddc2729ba69cc573e0679244ff3ec9/lectio-data.js';
 
   function hideOldTodoImmediately(){
-    if(document.getElementById('todo-no-flash'))return;
-    const s=document.createElement('style');
-    s.id='todo-no-flash';
-    s.textContent=`
-      #todoView .panel:not(:has(.todoLayout)){opacity:0!important;visibility:hidden!important;min-height:760px!important}
-      #todoView .panel:has(.todoLayout){opacity:1!important;visibility:visible!important;transition:none!important}
-    `;
-    document.head.appendChild(s);
+    if(!document.getElementById('todo-hard-no-flash')){
+      const s=document.createElement('style');
+      s.id='todo-hard-no-flash';
+      s.textContent=`
+        #todoView .panel:not(:has(.todoLayout)){opacity:0!important;visibility:hidden!important;min-height:760px!important}
+        #todoView .panel:has(.todoLayout){opacity:1!important;visibility:visible!important;transition:none!important}
+      `;
+      document.head.appendChild(s);
+    }
+    if(!document.getElementById('todo-no-flash')){
+      const s=document.createElement('style');
+      s.id='todo-no-flash';
+      s.textContent=`
+        #todoView .panel:not(:has(.todoLayout)){opacity:0!important;visibility:hidden!important;min-height:760px!important}
+        #todoView .panel:has(.todoLayout){opacity:1!important;visibility:visible!important;transition:none!important}
+      `;
+      document.head.appendChild(s);
+    }
   }
   hideOldTodoImmediately();
 
   function applyUiPolish(){
-    if(document.getElementById('final-ui-polish'))return;
+    document.querySelectorAll('#final-ui-polish').forEach(x=>x.remove());
     const s=document.createElement('style');
     s.id='final-ui-polish';
     s.textContent=`
@@ -29,17 +39,19 @@
       #todoView .todoMain .panelTitle{line-height:1!important;margin:0!important}
       #todoView .todoMain .table{table-layout:fixed!important;width:100%!important}
       #todoView .todoMain .table th{padding-top:8px!important;padding-bottom:8px!important}
-      #todoView .todoMain .table td{padding-top:8px!important;padding-bottom:8px!important;vertical-align:middle!important}
+      #todoView .todoMain .table td{padding-top:7px!important;padding-bottom:7px!important;vertical-align:middle!important}
       #todoView .todoMain .table th:nth-child(1),#todoView .todoMain .table td:nth-child(1){width:60px!important;min-width:60px!important;max-width:60px!important}
       #todoView .todoMain .table th:nth-child(3),#todoView .todoMain .table td:nth-child(3){width:170px!important;min-width:170px!important;max-width:170px!important}
       #todoView .todoMain .table th:nth-child(4),#todoView .todoMain .table td:nth-child(4){width:112px!important;min-width:112px!important;max-width:112px!important}
       #todoView .todoMain .taskText{width:100%!important;max-width:none!important;display:flex!important;align-items:center!important;gap:10px!important;overflow:visible!important}
-      #todoView .taskTextInput,#todoView .taskPill,#todoView input.taskPill,#todoView textarea.taskPill{font-size:16px!important;font-weight:580!important;letter-spacing:.005em!important;width:min(782px,calc(100% - 44px))!important;max-width:min(782px,calc(100% - 44px))!important;min-width:280px!important;min-height:36px!important;height:36px!important;line-height:20px!important;padding-top:7px!important;padding-bottom:7px!important;border-radius:20px!important;box-sizing:border-box!important;transition:none!important;resize:none!important;overflow:hidden!important;white-space:normal!important;font-family:inherit!important;vertical-align:middle!important}
-      #todoView textarea.taskPill{display:block!important}
+      #todoView .taskTextInput,#todoView .taskPill,#todoView input.taskPill,#todoView textarea.taskPill{font-size:16px!important;font-weight:580!important;letter-spacing:.005em!important;width:min(782px,calc(100% - 44px))!important;max-width:min(782px,calc(100% - 44px))!important;min-width:280px!important;min-height:58px!important;height:58px!important;line-height:20px!important;padding-top:8px!important;padding-bottom:8px!important;border-radius:21px!important;box-sizing:border-box!important;transition:none!important;resize:none!important;overflow:hidden!important;white-space:normal!important;font-family:inherit!important;vertical-align:middle!important}
+      #todoView input.taskPill,#todoView .taskTextInput{text-overflow:ellipsis!important;white-space:nowrap!important}
+      #todoView textarea.taskPill{display:block!important;white-space:pre-wrap!important}
       #todoView .doneRow .taskPill,#todoView .doneRow .taskTextInput,#todoView .doneRow textarea.taskPill{font-weight:580!important}
-      #todoView .cellSelect{height:36px!important;font-weight:800!important;width:150px!important;min-width:150px!important;max-width:150px!important;padding-left:14px!important;padding-right:28px!important;transition:none!important}
+      #todoView .cellSelect{height:40px!important;font-weight:800!important;width:150px!important;min-width:150px!important;max-width:150px!important;padding-left:14px!important;padding-right:28px!important;transition:none!important}
       #todoView .taskCheck{width:20px!important;height:20px!important}
       #todoView .dragCell{flex:0 0 24px!important}
+      #todoView .todoRow,#todoView .todoRow td{transition:none!important}
     `;
     document.head.appendChild(s);
   }
@@ -54,6 +66,22 @@
         e.stopPropagation();
         shade.classList.remove('open');
       },true);
+    }
+  }
+
+  function patchTodoRenderStability(){
+    const oldRender=window.renderTasks || (typeof renderTasks==='function' ? renderTasks : null);
+    if(typeof oldRender==='function'&&!window.__stableTodoNoClsPatched){
+      window.__stableTodoNoClsPatched=true;
+      renderTasks=function(){
+        hideOldTodoImmediately();
+        applyUiPolish();
+        const out=oldRender.apply(this,arguments);
+        applyUiPolish();
+        requestAnimationFrame(()=>applyUiPolish());
+        return out;
+      };
+      window.renderTasks=renderTasks;
     }
   }
 
@@ -114,6 +142,7 @@
     hideOldTodoImmediately();
     applyUiPolish();
     patchModalClose();
+    patchTodoRenderStability();
     applyBlueBrightnessFix();
   }
 
