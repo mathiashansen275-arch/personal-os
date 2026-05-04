@@ -15,7 +15,7 @@
         #aiChatInput::placeholder{font-weight:650!important;opacity:.72!important}
         .aiMsg{font-weight:500!important;letter-spacing:0!important;max-width:100%!important;align-self:stretch!important;box-sizing:border-box!important}
         .aiChatInput button{font-weight:900!important}
-        .aiSuggestions{display:flex;flex-wrap:wrap;gap:8px;padding:10px 12px 0 14px!important;border-top:none!important;order:0!important;justify-content:flex-end!important}
+        .aiSuggestions{display:flex;flex-wrap:wrap;gap:8px;padding:10px 12px 0 14px!important;border-top:none!important;order:0!important;justify-content:flex-start!important}
         .aiSuggest{height:34px;border-radius:999px;border:1px solid #49306c;background:#090812;color:#fff;font-weight:800;font-size:12.5px!important;letter-spacing:0;padding:0 12px;margin:0!important}
         .aiSuggest:hover{border-color:#9b6cff;background:#120d20}
         .event.business{background:rgba(48,64,24,.72)!important;border-color:#9caf55!important;color:#dbe8a6!important}
