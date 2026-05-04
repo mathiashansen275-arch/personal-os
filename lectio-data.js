@@ -9,12 +9,13 @@
       style.textContent=`
         .app{position:relative!important}
         .aiChatButton{left:13px!important}
-        .aiCostBadge{position:absolute!important;top:102px!important;right:24px!important;z-index:40!important}
+        .aiCostBadge{position:absolute!important;top:136px!important;right:24px!important;z-index:40!important}
+        .aiChatHeader{border-bottom:none!important;font-weight:650!important}
         #aiChatInput,.aiChatInput input{font-weight:500!important;letter-spacing:0!important}
         #aiChatInput::placeholder{font-weight:650!important;opacity:.72!important}
         .aiMsg{font-weight:500!important;letter-spacing:0!important;max-width:100%!important;align-self:stretch!important;box-sizing:border-box!important}
         .aiChatInput button{font-weight:900!important}
-        .aiSuggestions{display:flex;flex-wrap:wrap;gap:8px;padding:12px 14px 0 14px;border-top:1px solid #211733}
+        .aiSuggestions{display:flex;flex-wrap:wrap;gap:8px;padding:14px 14px 0 14px!important;border-top:none!important;order:0!important}
         .aiSuggest{height:34px;border-radius:999px;border:1px solid #49306c;background:#090812;color:#fff;font-weight:800;font-size:12px;letter-spacing:0;padding:0 12px}
         .aiSuggest:hover{border-color:#9b6cff;background:#120d20}
         .event.business{background:rgba(48,64,24,.72)!important;border-color:#9caf55!important;color:#dbe8a6!important}
@@ -40,11 +41,10 @@
       const btn=document.createElement('button');
       btn.type='button';
       btn.className='aiSuggest';
-      btn.textContent='Allocate tasks to available blocks';
+      btn.textContent='🧩 Allocate tasks to available blocks';
       btn.onclick=function(){input.value='Allocate tasks with durations to available blocks today';input.focus()};
       wrap.appendChild(btn);
-      const inputWrap=document.querySelector('.aiChatInput');
-      if(inputWrap&&inputWrap.parentNode)inputWrap.parentNode.insertBefore(wrap,inputWrap);
+      box.insertBefore(wrap,box.firstChild);
     }
   }
 
