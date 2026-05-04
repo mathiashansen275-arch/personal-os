@@ -10,6 +10,10 @@
         .app{position:relative!important}
         .aiChatButton{left:13px!important}
         .aiCostBadge{position:absolute!important;top:102px!important;right:24px!important;z-index:40!important}
+        #aiChatInput,.aiChatInput input{font-weight:500!important;letter-spacing:0!important}
+        #aiChatInput::placeholder{font-weight:650!important;opacity:.72!important}
+        .aiMsg{font-weight:500!important;letter-spacing:0!important}
+        .aiChatInput button{font-weight:900!important}
       `;
       document.head.appendChild(style);
     }
