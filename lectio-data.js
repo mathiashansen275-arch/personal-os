@@ -1,27 +1,25 @@
-// Loads the latest stable to-do/schedule layer, prevents old to-do flashes, and applies final UI polish.
+// Loads the latest stable to-do/schedule layer and applies final UI polish without hiding the to-do list on interactions.
 (function(){
   const BASE_URL = 'https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/5d487999a2ddc2729ba69cc573e0679244ff3ec9/lectio-data.js';
 
   let todoObserverStarted=false;
-  let interactionHidePatched=false;
+  let checkboxPatched=false;
 
-  function hideOldTodoImmediately(){
-    if(!document.getElementById('todo-hard-no-flash')){
-      const s=document.createElement('style');
-      s.id='todo-hard-no-flash';
-      s.textContent=`
-        #todoView .panel:not(:has(.todoLayout)){opacity:0!important;visibility:hidden!important;min-height:760px!important}
-        #todoView .panel:has(.todoLayout){opacity:1!important;visibility:visible!important;transition:none!important}
-        #todoView.is-rendering .panel{opacity:0!important;visibility:hidden!important}
-      `;
-      document.head.appendChild(s);
-    }
+  function stableBootStyles(){
+    if(document.getElementById('todo-stable-boot'))return;
+    const s=document.createElement('style');
+    s.id='todo-stable-boot';
+    s.textContent=`
+      #todoView .panel:not(:has(.todoLayout)){opacity:0!important;visibility:hidden!important;min-height:760px!important}
+      #todoView .panel:has(.todoLayout){opacity:1!important;visibility:visible!important;transition:none!important}
+    `;
+    document.head.appendChild(s);
   }
-  hideOldTodoImmediately();
+  stableBootStyles();
 
   function taskNeedsTwoLines(el){
     const v=String(el.value||'');
-    return v.length>74 || (el.scrollHeight>44 && el.tagName==='TEXTAREA');
+    return v.length>74 || (el.tagName==='TEXTAREA' && el.scrollHeight>46);
   }
 
   function fixTaskHeights(){
@@ -36,9 +34,12 @@
   }
 
   function applyUiPolish(){
-    document.querySelectorAll('#final-ui-polish').forEach(x=>x.remove());
-    const s=document.createElement('style');
-    s.id='final-ui-polish';
+    let s=document.getElementById('final-ui-polish');
+    if(!s){
+      s=document.createElement('style');
+      s.id='final-ui-polish';
+      document.head.appendChild(s);
+    }
     s.textContent=`
       #cancelModal{display:none!important}
       #closeModal{width:48px!important;height:48px!important;font-size:24px!important;line-height:1!important;border-radius:13px!important}
@@ -55,7 +56,7 @@
       #todoView .todoMain .table th:nth-child(3),#todoView .todoMain .table td:nth-child(3){width:170px!important;min-width:170px!important;max-width:170px!important}
       #todoView .todoMain .table th:nth-child(4),#todoView .todoMain .table td:nth-child(4){width:112px!important;min-width:112px!important;max-width:112px!important}
       #todoView .todoMain .taskText{width:100%!important;max-width:none!important;display:flex!important;align-items:center!important;gap:10px!important;overflow:visible!important}
-      #todoView .taskTextInput,#todoView .taskPill,#todoView input.taskPill,#todoView textarea.taskPill{font-size:16px!important;font-weight:580!important;letter-spacing:.005em!important;width:min(782px,calc(100% - 44px))!important;max-width:min(782px,calc(100% - 44px))!important;min-width:280px!important;min-height:40px!important;height:40px!important;line-height:20px!important;padding-top:8px!important;padding-bottom:8px!important;border-radius:999px!important;box-sizing:border-box!important;transition:none!important;resize:none!important;overflow:hidden!important;white-space:normal!important;font-family:inherit!important;vertical-align:middle!important}
+      #todoView .taskTextInput,#todoView .taskPill,#todoView input.taskPill,#todoView textarea.taskPill{font-size:16px!important;font-weight:580!important;letter-spacing:.005em!important;width:min(782px,calc(100% - 44px))!important;max-width:min(782px,calc(100% - 44px))!important;min-width:280px!important;min-height:40px!important;height:40px;line-height:20px!important;padding-top:8px!important;padding-bottom:8px!important;border-radius:999px;box-sizing:border-box!important;transition:none!important;resize:none!important;overflow:hidden!important;white-space:normal!important;font-family:inherit!important;vertical-align:middle!important}
       #todoView textarea.taskPill{display:block!important;white-space:pre-wrap!important}
       #todoView tr.taskTwoLine .taskPill,#todoView tr.taskTwoLine .taskTextInput,#todoView tr.taskTwoLine textarea.taskPill{height:60px!important;min-height:60px!important;border-radius:22px!important}
       #todoView .doneRow .taskPill,#todoView .doneRow .taskTextInput,#todoView .doneRow textarea.taskPill{font-weight:580!important}
@@ -64,7 +65,6 @@
       #todoView .dragCell{flex:0 0 24px!important}
       #todoView .todoRow,#todoView .todoRow td{transition:none!important}
     `;
-    document.head.appendChild(s);
     fixTaskHeights();
   }
 
@@ -81,50 +81,42 @@
     }
   }
 
-  function revealTodo(){
-    requestAnimationFrame(()=>{
-      applyUiPolish();
-      requestAnimationFrame(()=>{
-        applyUiPolish();
-        document.getElementById('todoView')?.classList.remove('is-rendering');
-      });
-    });
+  function saveTasksQuiet(){
+    try{ if(typeof tasks!=='undefined' && Array.isArray(tasks)) localStorage.setItem('personalOS.tasks.v1',JSON.stringify(tasks)); }catch(e){}
+    try{ if(typeof renderProductivity==='function') renderProductivity(); }catch(e){}
   }
 
-  function beginTodoRenderHide(){
-    const tv=document.getElementById('todoView');
-    if(tv) tv.classList.add('is-rendering');
-    hideOldTodoImmediately();
-    applyUiPolish();
-    setTimeout(revealTodo,90);
-    setTimeout(revealTodo,180);
-  }
-
-  function patchInteractionHide(){
-    if(interactionHidePatched)return;
-    interactionHidePatched=true;
-    document.addEventListener('pointerdown',e=>{
-      if(e.target.closest('#todoView .taskCheck,#todoView #addTask')) beginTodoRenderHide();
-    },true);
-    document.addEventListener('click',e=>{
-      if(e.target.closest('#todoView .taskCheck,#todoView #addTask')) beginTodoRenderHide();
-    },true);
+  function patchCheckboxNoRender(){
+    if(checkboxPatched)return;
+    checkboxPatched=true;
     document.addEventListener('change',e=>{
-      if(e.target.closest('#todoView .taskCheck')) beginTodoRenderHide();
+      const cb=e.target.closest&&e.target.closest('#todoView .taskCheck');
+      if(!cb)return;
+      const row=cb.closest('.todoRow');
+      if(!row || typeof tasks==='undefined' || !Array.isArray(tasks))return;
+      e.stopImmediatePropagation();
+      const t=tasks.find(x=>x.id===row.dataset.id);
+      if(t){
+        t.done=cb.checked;
+        if(t.done)t.completedAt=new Date().toISOString();
+        else delete t.completedAt;
+      }
+      row.classList.toggle('doneRow',cb.checked);
+      applyUiPolish();
+      saveTasksQuiet();
     },true);
   }
 
   function patchTodoRenderStability(){
-    patchInteractionHide();
+    patchCheckboxNoRender();
     const oldRender=window.renderTasks || (typeof renderTasks==='function' ? renderTasks : null);
-    if(typeof oldRender==='function'&&!window.__stableTodoNoClsPatchedV3){
-      window.__stableTodoNoClsPatchedV3=true;
+    if(typeof oldRender==='function'&&!window.__stableTodoNoClsPatchedV4){
+      window.__stableTodoNoClsPatchedV4=true;
       renderTasks=function(){
-        beginTodoRenderHide();
+        stableBootStyles();
         const out=oldRender.apply(this,arguments);
         applyUiPolish();
-        revealTodo();
-        setTimeout(revealTodo,90);
+        requestAnimationFrame(()=>applyUiPolish());
         return out;
       };
       window.renderTasks=renderTasks;
@@ -159,7 +151,7 @@
   }
 
   function applyAll(){
-    hideOldTodoImmediately();
+    stableBootStyles();
     applyUiPolish();
     patchModalClose();
     patchTodoRenderStability();
