@@ -1,14 +1,14 @@
-// Loader for the latest stable Personal OS layer plus the DeepSeek assistant.
+// Loads the last known-good Personal OS layer, then loads the DeepSeek assistant.
 (function(){
-  const STABLE_LAYER_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/5d487999a2ddc2729ba69cc573e0679244ff3ec9/lectio-data.js';
-  function load(src,onload){
+  const GOOD_WRAPPER_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
+  function loadAssistant(){
     const s=document.createElement('script');
-    s.src=src;
+    s.src='./assistant.js?v='+Date.now();
     s.async=false;
-    if(onload)s.onload=onload;
     document.head.appendChild(s);
   }
-  load(STABLE_LAYER_URL,function(){
-    load('./assistant.js?v='+Date.now());
-  });
+  fetch(GOOD_WRAPPER_URL,{cache:'no-store'})
+    .then(r=>r.text())
+    .then(code=>{(0,eval)(code);setTimeout(loadAssistant,1200);})
+    .catch(()=>setTimeout(loadAssistant,1200));
 })();
