@@ -21,6 +21,33 @@
     }
   }
 
+  function applyScheduleColorFix(){
+    document.querySelectorAll('#schedule-color-fix').forEach(x=>x.remove());
+    const s=document.createElement('style');
+    s.id='schedule-color-fix';
+    s.textContent=`
+      #scheduleView .event.time-future{filter:saturate(.7) brightness(.62)!important;opacity:.88!important}
+      #scheduleView .event.time-future::before{opacity:.34!important}
+      #scheduleView .event.school.time-future{filter:saturate(.9) brightness(.74)!important;opacity:.92!important}
+      #scheduleView .event.homework.time-future,#scheduleView .event.trip.time-future{filter:saturate(.9) brightness(.74)!important;opacity:.92!important}
+      #scheduleView .event.wind.time-future{filter:saturate(.85) brightness(.72)!important;opacity:.92!important}
+      #scheduleView .event.school.time-current{filter:saturate(1.35) brightness(1.18)!important;box-shadow:0 0 0 1px rgba(44,141,255,.28),0 0 22px rgba(13,119,255,.24),0 10px 26px rgba(0,0,0,.48)!important}
+      #scheduleView .event.school.time-current::after,#scheduleView .event.school.time-past::after{background:linear-gradient(180deg,rgba(44,141,255,.34),rgba(44,141,255,.12))!important;mix-blend-mode:screen!important}
+      #scheduleView .event.school .liveProgressFill{background:linear-gradient(180deg,rgba(44,141,255,.34),rgba(44,141,255,.12))!important;mix-blend-mode:screen!important;opacity:.72!important}
+      #scheduleView .event.homework.time-current::after,#scheduleView .event.homework.time-past::after,#scheduleView .event.trip.time-current::after,#scheduleView .event.trip.time-past::after{background:linear-gradient(180deg,rgba(49,231,255,.32),rgba(49,231,255,.12))!important;mix-blend-mode:screen!important}
+      #scheduleView .event.homework .liveProgressFill,#scheduleView .event.trip .liveProgressFill{background:linear-gradient(180deg,rgba(49,231,255,.32),rgba(49,231,255,.12))!important;mix-blend-mode:screen!important;opacity:.72!important}
+      #scheduleView .event.wind.time-current::after,#scheduleView .event.wind.time-past::after{background:linear-gradient(180deg,rgba(120,255,192,.28),rgba(120,255,192,.10))!important;mix-blend-mode:screen!important}
+      #scheduleView .event.wind .liveProgressFill{background:linear-gradient(180deg,rgba(120,255,192,.28),rgba(120,255,192,.10))!important;mix-blend-mode:screen!important;opacity:.7!important}
+      #scheduleView .event.routine.time-current::after,#scheduleView .event.routine.time-past::after,#scheduleView .event.evening.time-current::after,#scheduleView .event.evening.time-past::after{background:linear-gradient(180deg,rgba(202,169,255,.28),rgba(202,169,255,.10))!important;mix-blend-mode:screen!important}
+      #scheduleView .event.routine .liveProgressFill,#scheduleView .event.evening .liveProgressFill{background:linear-gradient(180deg,rgba(202,169,255,.28),rgba(202,169,255,.10))!important;mix-blend-mode:screen!important;opacity:.7!important}
+      #scheduleView .event.work.time-current::after,#scheduleView .event.work.time-past::after{background:linear-gradient(180deg,rgba(255,179,63,.30),rgba(255,179,63,.10))!important;mix-blend-mode:screen!important}
+      #scheduleView .event.work .liveProgressFill{background:linear-gradient(180deg,rgba(255,179,63,.30),rgba(255,179,63,.10))!important;mix-blend-mode:screen!important;opacity:.7!important}
+      #scheduleView .event.focus.time-current::after,#scheduleView .event.focus.time-past::after,#scheduleView .event.deep.time-current::after,#scheduleView .event.deep.time-past::after{background:linear-gradient(180deg,rgba(255,105,226,.28),rgba(255,105,226,.10))!important;mix-blend-mode:screen!important}
+      #scheduleView .event.focus .liveProgressFill,#scheduleView .event.deep .liveProgressFill{background:linear-gradient(180deg,rgba(255,105,226,.28),rgba(255,105,226,.10))!important;mix-blend-mode:screen!important;opacity:.7!important}
+    `;
+    document.head.appendChild(s);
+  }
+
   function isDefaultTaskText(v){
     const s=String(v||'').trim().toLowerCase();
     return !s || s==='new task';
@@ -98,6 +125,7 @@
   }
 
   function applyDragHandleOnly(){
+    applyScheduleColorFix();
     document.querySelectorAll('#todo-drag-handle-only').forEach(x=>x.remove());
     const s=document.createElement('style');
     s.id='todo-drag-handle-only';
@@ -148,6 +176,12 @@
   function patchTasks(){
     const apply=()=>{forceNewTasksToSelectDay();applyDragHandleOnly()};
     const oldRender=window.renderTasks || (typeof renderTasks==='function' ? renderTasks : null);
+    const oldCalendarRender=window.render || (typeof render==='function' ? render : null);
+    if(typeof oldCalendarRender==='function'&&!window.__scheduleColorRenderPatched){
+      window.__scheduleColorRenderPatched=true;
+      render=function(){const out=oldCalendarRender.apply(this,arguments);setTimeout(applyScheduleColorFix,0);return out};
+      window.render=render;
+    }
     if(typeof oldRender==='function'&&!window.__newTaskSelectDayPatched){
       window.__newTaskSelectDayPatched=true;
       renderTasks=function(){
