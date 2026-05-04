@@ -3,6 +3,7 @@
   const BASE_URL = 'https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/5d487999a2ddc2729ba69cc573e0679244ff3ec9/lectio-data.js';
 
   let todoObserverStarted=false;
+  let interactionHidePatched=false;
 
   function hideOldTodoImmediately(){
     if(!document.getElementById('todo-hard-no-flash')){
@@ -83,23 +84,47 @@
   function revealTodo(){
     requestAnimationFrame(()=>{
       applyUiPolish();
-      document.getElementById('todoView')?.classList.remove('is-rendering');
+      requestAnimationFrame(()=>{
+        applyUiPolish();
+        document.getElementById('todoView')?.classList.remove('is-rendering');
+      });
     });
   }
 
+  function beginTodoRenderHide(){
+    const tv=document.getElementById('todoView');
+    if(tv) tv.classList.add('is-rendering');
+    hideOldTodoImmediately();
+    applyUiPolish();
+    setTimeout(revealTodo,90);
+    setTimeout(revealTodo,180);
+  }
+
+  function patchInteractionHide(){
+    if(interactionHidePatched)return;
+    interactionHidePatched=true;
+    document.addEventListener('pointerdown',e=>{
+      if(e.target.closest('#todoView .taskCheck,#todoView #addTask')) beginTodoRenderHide();
+    },true);
+    document.addEventListener('click',e=>{
+      if(e.target.closest('#todoView .taskCheck,#todoView #addTask')) beginTodoRenderHide();
+    },true);
+    document.addEventListener('change',e=>{
+      if(e.target.closest('#todoView .taskCheck')) beginTodoRenderHide();
+    },true);
+  }
+
   function patchTodoRenderStability(){
+    patchInteractionHide();
     const oldRender=window.renderTasks || (typeof renderTasks==='function' ? renderTasks : null);
-    if(typeof oldRender==='function'&&!window.__stableTodoNoClsPatchedV2){
-      window.__stableTodoNoClsPatchedV2=true;
+    if(typeof oldRender==='function'&&!window.__stableTodoNoClsPatchedV3){
+      window.__stableTodoNoClsPatchedV3=true;
       renderTasks=function(){
-        const tv=document.getElementById('todoView');
-        if(tv) tv.classList.add('is-rendering');
-        hideOldTodoImmediately();
-        applyUiPolish();
+        beginTodoRenderHide();
         const out=oldRender.apply(this,arguments);
         applyUiPolish();
         revealTodo();
-        setTimeout(revealTodo,0);
+        setTimeout(revealTodo,90);
         return out;
       };
       window.renderTasks=renderTasks;
