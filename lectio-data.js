@@ -18,6 +18,11 @@
         .aiSuggestions{display:flex;flex-wrap:wrap;gap:8px;padding:4px 12px 0 6px!important;border-top:none!important;order:0!important;justify-content:flex-start!important}
         .aiSuggest{height:34px;border-radius:999px;border:1px solid #49306c;background:#090812;color:#fff;font-weight:800;font-size:12.5px!important;letter-spacing:0;padding:0 12px;margin:0!important}
         .aiSuggest:hover{border-color:#9b6cff;background:#120d20}
+        .aiChatMessages{scrollbar-width:thin!important;scrollbar-color:#6f45a8 #070710!important}
+        .aiChatMessages::-webkit-scrollbar{width:10px!important}
+        .aiChatMessages::-webkit-scrollbar-track{background:#070710!important;border-left:1px solid #211733!important}
+        .aiChatMessages::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#8f5cff,#352456)!important;border:2px solid #070710!important;border-radius:999px!important}
+        .aiChatMessages::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#b990ff,#49306c)!important}
         .event.business{background:rgba(48,64,24,.72)!important;border-color:#9caf55!important;color:#dbe8a6!important}
         .event.business .time,.event.business .title{color:#dbe8a6!important}
         .event.personal{background:rgba(76,0,45,.58)!important;border-color:#ff45d6!important;color:#ff69e2!important}
@@ -34,17 +39,23 @@
 
     const box=document.getElementById('aiChatMessages');
     const input=document.getElementById('aiChatInput');
-    if(box&&input&&!document.getElementById('aiSuggestions')){
-      const wrap=document.createElement('div');
-      wrap.id='aiSuggestions';
-      wrap.className='aiSuggestions';
-      const btn=document.createElement('button');
-      btn.type='button';
-      btn.className='aiSuggest';
-      btn.textContent='🧩 Allocate tasks to available blocks';
-      btn.onclick=function(){input.value='Allocate tasks with durations to available blocks today';input.focus()};
-      wrap.appendChild(btn);
-      box.insertBefore(wrap,box.firstChild);
+    if(box&&input){
+      const hasRealChat=!!box.querySelector('.aiMsg');
+      if(hasRealChat){
+        const existing=document.getElementById('aiSuggestions');
+        if(existing)existing.remove();
+      }else if(!document.getElementById('aiSuggestions')){
+        const wrap=document.createElement('div');
+        wrap.id='aiSuggestions';
+        wrap.className='aiSuggestions';
+        const btn=document.createElement('button');
+        btn.type='button';
+        btn.className='aiSuggest';
+        btn.textContent='🧩 Allocate tasks to available blocks';
+        btn.onclick=function(){input.value='Allocate tasks with durations to available blocks today';input.focus()};
+        wrap.appendChild(btn);
+        box.insertBefore(wrap,box.firstChild);
+      }
     }
   }
 
