@@ -1,4 +1,5 @@
 // Loads the last known-good Personal OS layer, then loads the DeepSeek assistant.
+// UI patch version: details-fix-v2
 (function(){
   const GOOD_WRAPPER_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATS_KEY='personalOS.todoStats.v2';
@@ -20,13 +21,18 @@
       #scheduleView .event.aiFreeHidden,#scheduleView .event.focus:not(.business):not(.personal),#scheduleView .event.deep:not(.business):not(.personal){display:none!important}
       #scheduleView .event.break,#scheduleView .event.aiBreakHidden{display:none!important}
       #scheduleView .event .time,#scheduleView .event .title{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:100%!important;line-height:1.12!important}
-      #scheduleView .event.aiCompact .time{font-size:11px!important;line-height:1!important;white-space:nowrap!important}
+      #scheduleView .event.aiCompact .time{font-size:12px!important;line-height:1!important;white-space:nowrap!important;text-align:center!important;display:block!important;width:100%!important}
       #scheduleView .event.aiCompact .title{display:none!important}
+      #scheduleView .event.homework .time,#scheduleView .event.homework .title{font-size:12px!important;text-align:center!important}
+      #scheduleView .event.homework.aiCompact .time{font-size:12px!important;text-align:center!important}
       #scheduleView .event.time-current.personal::after{background:linear-gradient(180deg,rgba(255,190,242,.54),rgba(255,105,226,.16))!important;mix-blend-mode:screen!important}
       #scheduleView .event.time-current.business::after{background:linear-gradient(180deg,rgba(232,242,183,.58),rgba(156,175,85,.18))!important;mix-blend-mode:screen!important}
       #scheduleView .event.time-current.work::after{background:linear-gradient(180deg,rgba(255,225,170,.58),rgba(255,170,55,.18))!important;mix-blend-mode:screen!important}
       #scheduleView .event.time-current.school::after,#scheduleView .event.time-current.homework::after{background:linear-gradient(180deg,rgba(190,225,255,.58),rgba(40,170,255,.18))!important;mix-blend-mode:screen!important}
       #scheduleView .event.time-current::after{filter:none!important;opacity:1!important}
+      .aiDetailFloat{font-size:13px!important;line-height:1.35!important}
+      .aiDetailFloat div{font-size:13px!important}
+      .aiDetailFloatTitle{font-size:13px!important}
       #todoView table tr>*:nth-child(3),#todoView .todoRow>*:nth-child(3),#todoView select:first-of-type,.aiDayColumnHidden{display:none!important}
     `;
     document.head.appendChild(style);
@@ -66,13 +72,18 @@
         #scheduleView .event.aiFreeHidden,#scheduleView .event.focus:not(.business):not(.personal),#scheduleView .event.deep:not(.business):not(.personal){display:none!important}
         #scheduleView .event.break,#scheduleView .event.aiBreakHidden{display:none!important}
         #scheduleView .event .time,#scheduleView .event .title{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:100%!important;line-height:1.12!important}
-        #scheduleView .event.aiCompact .time{font-size:11px!important;line-height:1!important;white-space:nowrap!important}
+        #scheduleView .event.aiCompact .time{font-size:12px!important;line-height:1!important;white-space:nowrap!important;text-align:center!important;display:block!important;width:100%!important}
         #scheduleView .event.aiCompact .title{display:none!important}
+        #scheduleView .event.homework .time,#scheduleView .event.homework .title{font-size:12px!important;text-align:center!important}
+        #scheduleView .event.homework.aiCompact .time{font-size:12px!important;text-align:center!important}
         #scheduleView .event.time-current.personal::after{background:linear-gradient(180deg,rgba(255,190,242,.54),rgba(255,105,226,.16))!important;mix-blend-mode:screen!important}
         #scheduleView .event.time-current.business::after{background:linear-gradient(180deg,rgba(232,242,183,.58),rgba(156,175,85,.18))!important;mix-blend-mode:screen!important}
         #scheduleView .event.time-current.work::after{background:linear-gradient(180deg,rgba(255,225,170,.58),rgba(255,170,55,.18))!important;mix-blend-mode:screen!important}
         #scheduleView .event.time-current.school::after,#scheduleView .event.time-current.homework::after{background:linear-gradient(180deg,rgba(190,225,255,.58),rgba(40,170,255,.18))!important;mix-blend-mode:screen!important}
         #scheduleView .event.time-current::after{filter:none!important;opacity:1!important}
+        .aiDetailFloat{font-size:13px!important;line-height:1.35!important}
+        .aiDetailFloat div{font-size:13px!important}
+        .aiDetailFloatTitle{font-size:13px!important}
         #todoView table tr>*:nth-child(3),#todoView .todoRow>*:nth-child(3),#todoView select:first-of-type,.aiDayColumnHidden{display:none!important}
       `;
       document.head.appendChild(style);
@@ -130,6 +141,14 @@
     return out||t.slice(0,25).trim();
   }
 
+  function fullTitleFits(el, full){
+    const titleEl=el.querySelector('.title');
+    if(!titleEl || !full)return true;
+    const t=eventMinutes(el);
+    if(t && t.end-t.start<=30)return false;
+    return full.length<=25;
+  }
+
   function applyScheduleCleanup(){
     document.querySelectorAll('#scheduleView .event').forEach(el=>{
       const titleEl=el.querySelector('.title');
@@ -137,7 +156,6 @@
       const t=eventMinutes(el);
       const rawTitle=(titleEl&&titleEl.textContent||'').trim();
       const dur=t?t.end-t.start:999;
-      const lower=rawTitle.toLowerCase();
       const isAvailable=/^available block$/i.test(rawTitle)||((el.classList.contains('focus')||el.classList.contains('deep'))&&!el.classList.contains('business')&&!el.classList.contains('personal'));
       const isBreak=el.classList.contains('break')||/\bbreak\b/i.test(rawTitle)||(!rawTitle&&dur<=30);
       if(isAvailable){el.classList.add('aiFreeHidden');return}
@@ -146,27 +164,39 @@
         if(!el.dataset.aiFullTitle)el.dataset.aiFullTitle=rawTitle;
         const full=el.dataset.aiFullTitle||rawTitle;
         const short=shortBlockTitle(full);
-        if(short && short!==rawTitle)titleEl.textContent=short;
-        if((full.length>25 || full!==short) && !el.querySelector('.aiDetailShow') && !/^(morning routine|evening routine)$/i.test(full)){
+        const shouldShorten=short && short!==rawTitle;
+        if(shouldShorten)titleEl.textContent=short;
+        const needDetails=(!fullTitleFits(el, full) || shouldShorten) && !/^(morning routine|evening routine|wind down)$/i.test(full);
+        if(!needDetails){
+          el.querySelectorAll('.aiDetailShow').forEach(b=>b.remove());
+        }else if(!el.querySelector('.aiDetailShow')){
           const btn=document.createElement('button');
           btn.className='aiDetailShow';
           btn.textContent='DETAILS';
-          btn.onclick=function(ev){ev.stopPropagation();showSimpleDetails(el,full,btn)};
+          btn.onclick=function(ev){ev.stopPropagation();toggleSimpleDetails(el,full,btn)};
           el.appendChild(btn);
+        }else{
+          el.querySelectorAll('.aiDetailShow').forEach(btn=>{btn.onclick=function(ev){ev.stopPropagation();toggleSimpleDetails(el,full,btn)}});
         }
       }
       if(dur<=30 && timeEl && titleEl && rawTitle){
         if(!el.dataset.aiOriginalTime)el.dataset.aiOriginalTime=timeEl.textContent;
         const short=shortBlockTitle(el.dataset.aiFullTitle||rawTitle);
-        timeEl.textContent=el.dataset.aiOriginalTime+' '+short;
+        timeEl.textContent=el.dataset.aiOriginalTime+(short?' '+short:'');
         el.classList.add('aiCompact');
       }
     });
   }
 
-  function showSimpleDetails(el,full,btn){
+  function toggleSimpleDetails(el,full,btn){
     const old=document.getElementById('aiDetailFloat');
-    if(old){old.remove();document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS');if(btn&&btn.textContent==='HIDE')return}
+    if(old && btn && btn.textContent==='HIDE'){
+      old.remove();
+      btn.textContent='DETAILS';
+      return;
+    }
+    if(old)old.remove();
+    document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS');
     const box=document.createElement('div');
     box.id='aiDetailFloat';
     box.className='aiDetailFloat';
@@ -250,6 +280,13 @@
     document.head.appendChild(s);
   }
   injectEarlyVisualOverrides();
+  document.addEventListener('pointerdown',function(e){
+    const f=document.getElementById('aiDetailFloat');
+    if(f && !e.target.closest('.aiDetailFloat') && !e.target.closest('.aiDetailShow')){
+      f.remove();
+      document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS');
+    }
+  },true);
   setInterval(applyFinalUiFixes,500);
   fetch(GOOD_WRAPPER_URL,{cache:'no-store'})
     .then(r=>r.text())
