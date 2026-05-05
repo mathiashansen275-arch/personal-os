@@ -27,25 +27,20 @@ export default async function handler(req, res) {
   if (!userMessage) return sendJson(res, 400, { error: 'Missing message' });
 
   const systemPrompt = [
-    'You are the Personal OS scheduling assistant.',
-    'You can read provided task and schedule data, but you cannot edit website code.',
+    'You are the Personal OS assistant. Behave like a normal helpful AI with full read access to the supplied Personal OS state.',
+    'You cannot edit app code. You can only return safe schedule actions and messages.',
     'Return JSON only.',
-    'Allowed JSON shape: {"message":"summary","actions":[{"type":"assign_task_to_block","taskId":"id","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","title":"title","blockType":"business|personal|homework|work|errand|neutral"}]}',
-    'Only schedule tasks when the user explicitly asks to allocate, move, schedule, plan, or place tasks into blocks.',
-    'If the user is just chatting or asking a question, answer with a message and no actions.',
-    'Only schedule undone tasks.',
-    'Sort schedulable tasks by duration ascending so shorter tasks are placed first when possible.',
-    'Use task.durationMinutes. If null, ask for a duration in parentheses.',
-    'Only use blocks where title is exactly Available block and isDefaultFreeBlock is true.',
-    'If a block has any other title, do not use it unless the user explicitly names that exact block and asks you to change it.',
-    'Never overwrite school blocks, wind down/evening routine blocks, work blocks, or custom user-created blocks.',
-    'Break blocks may be moved around freely only when needed to fit tasks, but task actions must still be placed into Available block time.',
-    'Do not create or return task blocks shorter than 45 minutes. If a task is shorter than 45 minutes, group it with other short tasks or use a 45 minute block.',
-    'Prefer generated free blocks after school.',
-    'Do not invent dates or times outside appState.week.',
-    'Choose blockType business for agency, work, client, SOP, strategy, product research, Vinted, business, sales, marketing, studying business, or money-making tasks.',
-    'Choose blockType personal for chores, personal life, health, friends, family, errands that are not business, and general personal tasks.',
-    'Keep action titles clean and based on the task name without the duration parentheses.'
+    'Allowed JSON shape: {"message":"summary","actions":[{"type":"assign_group_to_block","taskIds":["id"],"taskTexts":["full task text"],"date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","title":"max 25 chars","blockType":"business|personal|homework|work|errand|neutral"}]}',
+    'When scheduling, use the current appState tasks and week. Respect task order: earlier tasks are higher priority and should be scheduled earlier when possible.',
+    'Infer days and exact time ranges from task text, for example Thursday 12.45-15.30 cut grandmas grass means create a block on Thursday 12:45-15:30 with a short title like Grandma grass.',
+    'If a task has a duration in parentheses, use that duration. If multiple short tasks are under the minimum, group them.',
+    'Generated blocks must be at least 30 minutes. If grouped, make a useful title with & under 25 chars; otherwise use Grouped tasks.',
+    'Always preserve full task text in taskTexts so the UI can show details.',
+    'Never overlap or overwrite school, work, wind down/evening routine, trip, or existing custom blocks unless the user explicitly asks to edit that exact block.',
+    'Ignore break blocks. The user will take breaks manually.',
+    'If there is not enough room today, continue into the next day with free time.',
+    'Use concise block titles, max 25 characters.',
+    'For general chat, answer normally in message and return actions: [].'
   ].join('\n');
 
   const upstream = await fetch(endpoint, {
@@ -80,6 +75,7 @@ export default async function handler(req, res) {
     parsed.usage = { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
     parsed.costEUR = costEUR;
     parsed.costPricingConfigured = inputEurPer1M > 0 || outputEurPer1M > 0;
+    if (!Array.isArray(parsed.actions)) parsed.actions = [];
     return sendJson(res, 200, parsed);
   } catch {
     return sendJson(res, 502, { error: 'Model returned invalid JSON', raw: content });
