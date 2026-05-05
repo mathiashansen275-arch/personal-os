@@ -1,5 +1,5 @@
-// Loads stable Personal OS, then applies schedule polish: locked AI blocks, exact 4px adjacency gap, static hover, details sizing.
-// UI patch version: newest-stable-v13
+// Loads stable Personal OS, then applies schedule polish: exact 4px adjacency gap, Wednesday work/evening fit, static blocks, brighter past/progress, and toggle details.
+// UI patch version: newest-stable-v14
 (function(){
   const BASE_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATE_KEY='personalOS.schedule.v5';
@@ -31,6 +31,7 @@
       st.custom.forEach(b=>{
         const title=String(b.title||'').toLowerCase();
         if(/wind down/.test(title)&&b.start)b.end=hm(mins(b.start)+30);
+        if(/evening routine/.test(title)&&wedDate(b.date)){b.start='21:20';b.end='22:30'}
         if(/\bwork\b/.test(title)&&wedDate(b.date))b.end='21:20';
       });
       if(st.custom.length!==before)localStorage.setItem(STATE_KEY,JSON.stringify(st));
@@ -38,12 +39,13 @@
   }
 
   function css(){
-    let s=document.getElementById('assistant-stable-v13-fixes');
-    if(!s){s=document.createElement('style');s.id='assistant-stable-v13-fixes';document.head.appendChild(s)}
+    let s=document.getElementById('assistant-stable-v14-fixes');
+    if(!s){s=document.createElement('style');s.id='assistant-stable-v14-fixes';document.head.appendChild(s)}
     s.textContent=`
       #addBlock,#revertWeek{display:none!important}
       body:not(.aiScheduleActive) #prev,body:not(.aiScheduleActive) #next,body:not(.aiScheduleActive) #today{display:none!important}
       #scheduleView .event,#scheduleView .event:hover{transition:none!important;animation:none!important;transform:none!important;filter:none!important;box-shadow:none!important}
+      #scheduleView .event.past,#scheduleView .event.dimmed,#scheduleView .event.completed,#scheduleView .event[style*="opacity"]{opacity:.78!important}
       #scheduleView .event.break,#scheduleView .event.aiBreakHidden,#scheduleView .event.aiFreeHidden,#scheduleView .event.focus:not(.business):not(.personal),#scheduleView .event.deep:not(.business):not(.personal){display:none!important}
       #scheduleView .event.aiLockedGenerated{cursor:default!important}
       #scheduleView .event .aiDetailShow{display:none!important}
@@ -78,13 +80,14 @@
     const ok=p.getBoundingClientRect().width<=Math.max(0,node.getBoundingClientRect().width-(reserve||0)-2);p.remove();return ok;
   }
 
+  function closeDetails(){const f=document.getElementById('aiDetailFloat');if(f){f.remove();document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS')}}
+  function detailId(el){if(!el.dataset.aiDetailId)el.dataset.aiDetailId='d'+Math.random().toString(36).slice(2);return el.dataset.aiDetailId}
   function details(el,btn){
-    const old=document.getElementById('aiDetailFloat');
-    if(old&&old.dataset.forEl===el.dataset.aiDetailId){old.remove();document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS');return}
+    const id=detailId(el), old=document.getElementById('aiDetailFloat');
+    if(old&&old.dataset.forEl===id){closeDetails();return}
     if(old)old.remove();
     document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS');
-    if(!el.dataset.aiDetailId)el.dataset.aiDetailId='d'+Math.random().toString(36).slice(2);
-    const box=document.createElement('div');box.id='aiDetailFloat';box.className='aiDetailFloat';box.dataset.forEl=el.dataset.aiDetailId;
+    const box=document.createElement('div');box.id='aiDetailFloat';box.className='aiDetailFloat';box.dataset.forEl=id;
     const h=document.createElement('div');h.className='aiDetailFloatTitle';h.textContent='Full task';box.appendChild(h);
     const txt=(el.dataset.aiTaskTexts||el.dataset.aiFullTitle||el.dataset.stableBaseTitle||((el.querySelector('.title')||{}).textContent)||'Task details').trim();
     txt.split('||').filter(Boolean).forEach(x=>{const d=document.createElement('div');d.textContent='• '+x;box.appendChild(d)});
@@ -92,7 +95,7 @@
     const r=el.getBoundingClientRect();box.style.left=Math.min(window.innerWidth-450,Math.max(8,r.left+6))+'px';box.style.top=Math.min(window.innerHeight-190,Math.max(8,r.bottom+6))+'px';
     if(btn)btn.textContent='DETAILS';
   }
-  function ensureBtn(el){let b=el.querySelector('.aiDetailShow');if(!b){b=document.createElement('button');b.className='aiDetailShow';b.textContent='DETAILS';b.onclick=e=>{e.stopPropagation();details(el,b)};el.appendChild(b)}b.textContent='DETAILS';return b}
+  function ensureBtn(el){let b=el.querySelector('.aiDetailShow');if(!b){b=document.createElement('button');b.className='aiDetailShow';el.appendChild(b)}b.textContent='DETAILS';b.onclick=e=>{e.preventDefault();e.stopPropagation();e.stopImmediatePropagation&&e.stopImmediatePropagation();details(el,b)};return b}
   function markDetails(el){
     const title=el.querySelector('.title'), time=el.querySelector('.time'); if(!title)return;
     const full=clean(el.dataset.aiFullTitle||el.dataset.stableBaseTitle||title.textContent||'');
@@ -116,8 +119,10 @@
       let start=Math.max(r.t.start,prevEnd), end=r.t.end, title=clean(el.dataset.stableBaseTitle||(titleEl&&titleEl.textContent)||'');
       if(titleEl&&!el.dataset.stableBaseTitle)el.dataset.stableBaseTitle=title;
       if(el.classList.contains('wind')){title='Wind down';end=r.t.start+30;}
+      if(/evening routine/i.test(title)&&isWed){start=Math.max(21*60+20,prevEnd);end=22*60+30;}
       if(/\bwork\b/i.test(title)&&isWed)end=21*60+20;
-      let duration=Math.max(1,end-r.t.start); end=start+duration;
+      let duration=Math.max(1,end-(/evening routine/i.test(title)&&isWed?start:r.t.start));
+      if(!(/evening routine/i.test(title)&&isWed))end=start+duration;
       if(el.classList.contains('homework'))title=clean(title||'Homework');
       const oneLine=end-start<=30||el.classList.contains('homework')||el.classList.contains('wind');
       const label=oneLine?(hm(start)+'-'+hm(end)+' '+title):String(el.dataset.stableBaseTime).replace(r.t.raw,hm(start)+'-'+hm(end));
@@ -126,10 +131,9 @@
       const naturalTop=baseTop+(start-r.t.start)*PX;
       const naturalBottom=baseTop+(end-r.t.start)*PX;
       let top=naturalTop;
-      if(prevEnd>0&&(r.t.start-prevEnd)<=5)top=prevBottom+GAP_PX;
+      if(prevEnd>0 && Math.abs(start-prevEnd)<=1)top=prevBottom+GAP_PX;
       else top=Math.max(naturalTop,prevBottom+GAP_PX);
       let height=Math.max(12,naturalBottom-top);
-      if(oneLine)height=Math.max(12,height);
       const topPx=top+'px', heightPx=height+'px';
       if(el.style.top!==topPx)el.style.top=topPx;
       if(el.style.height!==heightPx)el.style.height=heightPx;
@@ -152,15 +156,14 @@
     side.querySelectorAll('.todoDay').forEach(card=>{const label=((card.querySelector('.todoDayTop span')||{}).textContent||card.textContent||'').trim();const p=(/^Today/i.test(label)||new RegExp('^'+todayName+'\\b','i').test(label))?pct:0;const top=card.querySelector('.todoDayTop'),fill=card.querySelector('.todoBarFill');if(top){const spans=top.querySelectorAll('span');if(spans[1])spans[1].textContent=p+'%'}if(fill)fill.style.width=p+'%'});
   }
 
-  function closeDetails(){const f=document.getElementById('aiDetailFloat');if(f){f.remove();document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS')}}
   function hash(){return Array.from(document.querySelectorAll('#scheduleView .event')).map(el=>[(el.querySelector('.time')||{}).textContent,(el.querySelector('.title')||{}).textContent,el.className,el.style.top,el.style.height].join('|')).join('~')}
-  function apply(force){css();nav();cost();const h=hash();if(force||h!==lastHash){document.querySelectorAll('#scheduleView .day').forEach(normalizeDay);lastHash=hash()}progress()}
+  function apply(force){css();nav();cost();const h=hash();if(force||h!==lastHash){document.querySelectorAll('#scheduleView .day').forEach(normalizeDay);lastHash=hash()}document.querySelectorAll('#scheduleView .event').forEach(markDetails);progress()}
   function schedule(force){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;apply(force)})}
   function loadAssistant(){if(document.getElementById('aiChatButton'))return;const s=document.createElement('script');s.src='./assistant.js?v='+Date.now();s.async=false;document.head.appendChild(s)}
 
   cleanupState();css();
-  document.addEventListener('click',e=>{const ev=e.target&&e.target.closest&&e.target.closest('#scheduleView .event.aiLockedGenerated');if(ev&&!e.target.closest('.aiDetailShow')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation&&e.stopImmediatePropagation()}},true);
+  document.addEventListener('click',e=>{const btn=e.target&&e.target.closest&&e.target.closest('#scheduleView .aiDetailShow');if(btn){const el=btn.closest('.event');if(el){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation&&e.stopImmediatePropagation();details(el,btn);return}}const ev=e.target&&e.target.closest&&e.target.closest('#scheduleView .event.aiLockedGenerated');if(ev){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation&&e.stopImmediatePropagation()}},true);
   document.addEventListener('dblclick',e=>{const ev=e.target&&e.target.closest&&e.target.closest('#scheduleView .event.aiLockedGenerated');if(ev){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation&&e.stopImmediatePropagation()}},true);
   window.addEventListener('scroll',closeDetails,true);
-  fetch(BASE_URL,{cache:'no-store'}).then(r=>r.text()).then(code=>{(0,eval)(code);loadAssistant();cleanupState();try{if(typeof render==='function')render()}catch(e){}schedule(true);setTimeout(()=>{loadAssistant();schedule(true);cost()},100);setTimeout(()=>{loadAssistant();schedule(true);cost()},500);setTimeout(()=>{loadAssistant();cost()},1200);new MutationObserver(()=>schedule(false)).observe(document.getElementById('scheduleView')||document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']});setInterval(()=>{loadAssistant();nav();cost();progress()},300)}).catch(()=>{loadAssistant();schedule(true);setInterval(()=>{loadAssistant();nav();cost();progress()},300)});
+  fetch(BASE_URL,{cache:'no-store'}).then(r=>r.text()).then(code=>{(0,eval)(code);loadAssistant();cleanupState();try{if(typeof render==='function')render()}catch(e){}schedule(true);setTimeout(()=>{loadAssistant();schedule(true);cost()},100);setTimeout(()=>{loadAssistant();schedule(true);cost()},500);setTimeout(()=>{loadAssistant();cost()},1200);new MutationObserver(()=>schedule(false)).observe(document.getElementById('scheduleView')||document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']});setInterval(()=>{loadAssistant();nav();cost();progress();document.querySelectorAll('#scheduleView .event').forEach(markDetails)},300)}).catch(()=>{loadAssistant();schedule(true);setInterval(()=>{loadAssistant();nav();cost();progress();document.querySelectorAll('#scheduleView .event').forEach(markDetails)},300)});
 })();
