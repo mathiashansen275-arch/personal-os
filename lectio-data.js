@@ -1,5 +1,5 @@
 // Loads the newest stable Personal OS layer, then applies stable small-block layout without jitter.
-// UI patch version: newest-stable-v6
+// UI patch version: newest-stable-v7
 (function(){
   const BASE_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATE_KEY='personalOS.schedule.v5';
@@ -11,26 +11,28 @@
   function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
   const TODAY=ymd(new Date());
 
-  function cleanupTodayTaskBlocks(){
+  function cleanupInvalidTaskBlocks(){
     try{
       const state=JSON.parse(localStorage.getItem(STATE_KEY)||'{}')||{};
       if(!Array.isArray(state.custom))return;
       const before=state.custom.length;
       state.custom=state.custom.filter(b=>{
-        if(b.date!==TODAY)return true;
         const type=String(b.type||'').toLowerCase();
         const title=String(b.title||'').toLowerCase();
         if(type==='school'||type==='routine'||type==='evening'||type==='wind'||type==='work')return true;
         if(/morning routine|evening routine|wind down/.test(title))return true;
-        return false;
+        if(b.date===TODAY)return false;
+        const s=String(b.start||'00:00');
+        const mins=Number(s.slice(0,2))*60+Number(s.slice(3,5));
+        return mins>=14*60+45;
       });
       if(state.custom.length!==before)localStorage.setItem(STATE_KEY,JSON.stringify(state));
     }catch(e){}
   }
 
   function injectCss(){
-    let s=document.getElementById('assistant-stable-v6-fixes');
-    if(!s){s=document.createElement('style');s.id='assistant-stable-v6-fixes';document.head.appendChild(s)}
+    let s=document.getElementById('assistant-stable-v7-fixes');
+    if(!s){s=document.createElement('style');s.id='assistant-stable-v7-fixes';document.head.appendChild(s)}
     s.textContent=`
       #addBlock{display:none!important}
       #revertWeek{display:none!important}
@@ -160,12 +162,12 @@
     document.head.appendChild(s);
   }
 
-  cleanupTodayTaskBlocks();
+  cleanupInvalidTaskBlocks();
   injectCss();
   fetch(BASE_URL,{cache:'no-store'}).then(r=>r.text()).then(code=>{
     (0,eval)(code);
     loadAssistant();
-    cleanupTodayTaskBlocks();
+    cleanupInvalidTaskBlocks();
     try{if(typeof render==='function')render()}catch(e){}
     schedule(true);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},100);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},500);setTimeout(()=>{loadAssistant();placeCost()},1200);
     const root=document.getElementById('scheduleView')||document.body;
