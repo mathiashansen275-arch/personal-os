@@ -23,8 +23,8 @@
         .aiChatMessages::-webkit-scrollbar-track{background:#070710!important;border-left:1px solid #211733!important}
         .aiChatMessages::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#8f5cff,#352456)!important;border:2px solid #070710!important;border-radius:999px!important}
         .aiChatMessages::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#b990ff,#49306c)!important}
-        .event.time-past{opacity:.62!important;filter:brightness(1.08)!important}
-        .event.time-past .time,.event.time-past .title{opacity:.92!important}
+        .event.time-past{opacity:.72!important;filter:brightness(1.18)!important}
+        .event.time-past .time,.event.time-past .title{opacity:.98!important}
         .event.business{background:rgba(48,64,24,.72)!important;border-color:#9caf55!important;color:#dbe8a6!important}
         .event.business .time,.event.business .title{color:#dbe8a6!important}
         .event.personal{background:rgba(76,0,45,.58)!important;border-color:#ff45d6!important;color:#ff69e2!important}
