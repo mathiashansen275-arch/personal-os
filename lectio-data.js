@@ -1,8 +1,9 @@
 // Loads the last known-good Personal OS layer, then loads the DeepSeek assistant.
-// UI patch version: details-fix-v2
+// UI patch version: details-fix-v3
 (function(){
   const GOOD_WRAPPER_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATS_KEY='personalOS.todoStats.v2';
+  let detailAnchor=null;
 
   function injectEarlyVisualOverrides(){
     if(document.getElementById('assistant-early-visual-overrides'))return;
@@ -30,9 +31,9 @@
       #scheduleView .event.time-current.work::after{background:linear-gradient(180deg,rgba(255,225,170,.58),rgba(255,170,55,.18))!important;mix-blend-mode:screen!important}
       #scheduleView .event.time-current.school::after,#scheduleView .event.time-current.homework::after{background:linear-gradient(180deg,rgba(190,225,255,.58),rgba(40,170,255,.18))!important;mix-blend-mode:screen!important}
       #scheduleView .event.time-current::after{filter:none!important;opacity:1!important}
-      .aiDetailFloat{font-size:13px!important;line-height:1.35!important}
-      .aiDetailFloat div{font-size:13px!important}
-      .aiDetailFloatTitle{font-size:13px!important}
+      .aiDetailFloat{position:fixed!important;z-index:120!important;max-width:360px!important;font-size:13.5px!important;line-height:1.35!important;background:#100b1b!important;border:1px solid #7f52ff!important;border-radius:10px!important;padding:10px 12px!important;box-shadow:0 14px 38px rgba(0,0,0,.48)!important;color:#f7f3ff!important;pointer-events:auto!important}
+      .aiDetailFloat div{font-size:13.5px!important}
+      .aiDetailFloatTitle{font-size:13.5px!important;font-weight:1000!important;margin-bottom:4px!important}
       #todoView table tr>*:nth-child(3),#todoView .todoRow>*:nth-child(3),#todoView select:first-of-type,.aiDayColumnHidden{display:none!important}
     `;
     document.head.appendChild(style);
@@ -81,9 +82,9 @@
         #scheduleView .event.time-current.work::after{background:linear-gradient(180deg,rgba(255,225,170,.58),rgba(255,170,55,.18))!important;mix-blend-mode:screen!important}
         #scheduleView .event.time-current.school::after,#scheduleView .event.time-current.homework::after{background:linear-gradient(180deg,rgba(190,225,255,.58),rgba(40,170,255,.18))!important;mix-blend-mode:screen!important}
         #scheduleView .event.time-current::after{filter:none!important;opacity:1!important}
-        .aiDetailFloat{font-size:13px!important;line-height:1.35!important}
-        .aiDetailFloat div{font-size:13px!important}
-        .aiDetailFloatTitle{font-size:13px!important}
+        .aiDetailFloat{position:fixed!important;z-index:120!important;max-width:360px!important;font-size:13.5px!important;line-height:1.35!important;background:#100b1b!important;border:1px solid #7f52ff!important;border-radius:10px!important;padding:10px 12px!important;box-shadow:0 14px 38px rgba(0,0,0,.48)!important;color:#f7f3ff!important;pointer-events:auto!important}
+        .aiDetailFloat div{font-size:13.5px!important}
+        .aiDetailFloatTitle{font-size:13.5px!important;font-weight:1000!important;margin-bottom:4px!important}
         #todoView table tr>*:nth-child(3),#todoView .todoRow>*:nth-child(3),#todoView select:first-of-type,.aiDayColumnHidden{display:none!important}
       `;
       document.head.appendChild(style);
@@ -141,12 +142,28 @@
     return out||t.slice(0,25).trim();
   }
 
+  function textFitsNode(node,text){
+    if(!node || !text)return true;
+    const probe=document.createElement('span');
+    const cs=getComputedStyle(node);
+    probe.style.cssText='position:absolute;visibility:hidden;white-space:nowrap;font:'+cs.font+';letter-spacing:'+cs.letterSpacing+';padding:0;border:0;left:-9999px;top:-9999px';
+    probe.textContent=text;
+    document.body.appendChild(probe);
+    const fits=probe.getBoundingClientRect().width <= Math.max(0,node.getBoundingClientRect().width-2);
+    probe.remove();
+    return fits;
+  }
+
+  function compactFullTitleFits(el, full, timeLabel){
+    const timeEl=el.querySelector('.time');
+    if(!timeEl || !full)return true;
+    return textFitsNode(timeEl,(timeLabel||'')+' '+full);
+  }
+
   function fullTitleFits(el, full){
     const titleEl=el.querySelector('.title');
     if(!titleEl || !full)return true;
-    const t=eventMinutes(el);
-    if(t && t.end-t.start<=30)return false;
-    return full.length<=25;
+    return textFitsNode(titleEl,full);
   }
 
   function applyScheduleCleanup(){
@@ -166,7 +183,15 @@
         const short=shortBlockTitle(full);
         const shouldShorten=short && short!==rawTitle;
         if(shouldShorten)titleEl.textContent=short;
-        const needDetails=(!fullTitleFits(el, full) || shouldShorten) && !/^(morning routine|evening routine|wind down)$/i.test(full);
+        let needDetails=false;
+        if(!/^(morning routine|evening routine|wind down)$/i.test(full)){
+          if(dur<=30 && timeEl){
+            const label=el.dataset.aiOriginalTime||t&&t.label||timeEl.textContent;
+            needDetails=!compactFullTitleFits(el,full,label);
+          }else{
+            needDetails=shouldShorten || !fullTitleFits(el,full);
+          }
+        }
         if(!needDetails){
           el.querySelectorAll('.aiDetailShow').forEach(b=>b.remove());
         }else if(!el.querySelector('.aiDetailShow')){
@@ -186,12 +211,33 @@
         el.classList.add('aiCompact');
       }
     });
+    repositionSimpleDetails();
+  }
+
+  function positionSimpleDetails(box,el){
+    if(!box || !el || !document.body.contains(el))return;
+    const r=el.getBoundingClientRect();
+    if(r.bottom<0 || r.top>window.innerHeight || r.right<0 || r.left>window.innerWidth){
+      box.style.display='none';
+      return;
+    }
+    box.style.display='block';
+    const w=box.offsetWidth||360;
+    const h=box.offsetHeight||90;
+    box.style.left=Math.min(window.innerWidth-w-8,Math.max(8,r.left+6))+'px';
+    box.style.top=Math.min(window.innerHeight-h-8,Math.max(8,r.bottom+6))+'px';
+  }
+
+  function repositionSimpleDetails(){
+    const box=document.getElementById('aiDetailFloat');
+    if(box && detailAnchor)positionSimpleDetails(box,detailAnchor);
   }
 
   function toggleSimpleDetails(el,full,btn){
     const old=document.getElementById('aiDetailFloat');
-    if(old && btn && btn.textContent==='HIDE'){
+    if(old && detailAnchor===el && btn && btn.textContent==='HIDE'){
       old.remove();
+      detailAnchor=null;
       btn.textContent='DETAILS';
       return;
     }
@@ -202,9 +248,8 @@
     box.className='aiDetailFloat';
     box.innerHTML='<div class="aiDetailFloatTitle">Full task</div><div>• '+String(full).replace(/[<>]/g,'')+'</div>';
     document.body.appendChild(box);
-    const r=el.getBoundingClientRect();
-    box.style.left=Math.min(window.innerWidth-370,Math.max(8,r.left+6))+'px';
-    box.style.top=Math.min(window.innerHeight-180,Math.max(8,r.bottom+6))+'px';
+    detailAnchor=el;
+    positionSimpleDetails(box,el);
     if(btn)btn.textContent='HIDE';
   }
 
@@ -284,9 +329,12 @@
     const f=document.getElementById('aiDetailFloat');
     if(f && !e.target.closest('.aiDetailFloat') && !e.target.closest('.aiDetailShow')){
       f.remove();
+      detailAnchor=null;
       document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS');
     }
   },true);
+  window.addEventListener('scroll',repositionSimpleDetails,true);
+  window.addEventListener('resize',repositionSimpleDetails);
   setInterval(applyFinalUiFixes,500);
   fetch(GOOD_WRAPPER_URL,{cache:'no-store'})
     .then(r=>r.text())
