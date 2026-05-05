@@ -1,15 +1,20 @@
 // Loads the newest stable Personal OS layer, then applies stable no-overlap layout and locked AI task blocks.
-// UI patch version: newest-stable-v11
+// UI patch version: newest-stable-v12
 (function(){
   const BASE_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATE_KEY='personalOS.schedule.v5';
   const PX=1.22;
-  const GAP_PX=5;
+  const GAP_PX=4;
   let appliedHash='';
   let raf=0;
 
   function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
   const TODAY=ymd(new Date());
+
+  function isWednesdayDate(dateText){
+    const d=new Date(String(dateText||'')+'T00:00:00');
+    return !isNaN(d)&&d.getDay()===3;
+  }
 
   function cleanupInvalidTaskBlocks(){
     try{
@@ -32,18 +37,21 @@
           const sm=Number(String(b.start).slice(0,2))*60+Number(String(b.start).slice(3,5));
           b.end=String(Math.floor((sm+30)/60)).padStart(2,'0')+':'+String((sm+30)%60).padStart(2,'0');
         }
+        if(/\bwork\b/.test(title)&&isWednesdayDate(b.date))b.end='21:20';
       });
       if(state.custom.length!==before)localStorage.setItem(STATE_KEY,JSON.stringify(state));
     }catch(e){}
   }
 
   function injectCss(){
-    let s=document.getElementById('assistant-stable-v11-fixes');
-    if(!s){s=document.createElement('style');s.id='assistant-stable-v11-fixes';document.head.appendChild(s)}
+    let s=document.getElementById('assistant-stable-v12-fixes');
+    if(!s){s=document.createElement('style');s.id='assistant-stable-v12-fixes';document.head.appendChild(s)}
     s.textContent=`
       #addBlock{display:none!important}
       #revertWeek{display:none!important}
       body:not(.aiScheduleActive) #prev,body:not(.aiScheduleActive) #next,body:not(.aiScheduleActive) #today{display:none!important}
+      #scheduleView .event{transition:none!important;animation:none!important;transform:none!important;filter:none!important}
+      #scheduleView .event:hover{transition:none!important;animation:none!important;transform:none!important;filter:none!important}
       #scheduleView .event.break,#scheduleView .event.aiBreakHidden,#scheduleView .event.aiFreeHidden,#scheduleView .event.focus:not(.business):not(.personal),#scheduleView .event.deep:not(.business):not(.personal){display:none!important}
       #scheduleView .event.aiLockedGenerated{cursor:default!important}
       #scheduleView .event.aiLockedGenerated .aiDetailShow{pointer-events:auto!important}
@@ -57,9 +65,9 @@
       #scheduleView .event.aiTallBlock{display:block!important;text-align:left!important}
       #scheduleView .event.homework .title,#scheduleView .event.wind .title{display:none!important}
       #scheduleView .event.homework .time,#scheduleView .event.wind .time{white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important;font-size:11.5px!important;letter-spacing:-.015em!important;line-height:1!important}
-      .aiDetailFloat{font-size:13.5px!important;line-height:1.35!important;max-width:420px!important}
-      .aiDetailFloat div{font-size:13.5px!important}
-      .aiDetailFloatTitle{font-size:13px!important;font-weight:900!important}
+      .aiDetailFloat{font-size:14.5px!important;line-height:1.35!important;max-width:420px!important}
+      .aiDetailFloat div{font-size:14.5px!important}
+      .aiDetailFloatTitle{font-size:14px!important;font-weight:900!important}
       #aiCostBadge,.aiCostBadge{position:absolute!important;top:114px!important;right:24px!important;left:auto!important;bottom:auto!important;transform:none!important;z-index:40!important;display:flex!important}
       .app{position:relative!important}
     `;
@@ -74,6 +82,7 @@
   function cleanTitle(text){return String(text||'').replace(/^\s*2i\s+/i,'').replace(/^\s*available block\s*$/i,'').replace(/\s+/g,' ').trim()}
   function isAvailable(el){const title=cleanTitle((el.querySelector('.title')||{}).textContent||'');return /^available block$/i.test(title)||el.classList.contains('aiFreeHidden')||((el.classList.contains('focus')||el.classList.contains('deep'))&&!el.classList.contains('business')&&!el.classList.contains('personal'))}
   function looksGenerated(el){const title=cleanTitle((el.querySelector('.title')||{}).textContent||'');return el.classList.contains('aiNeedsDetails')||el.querySelector('.aiDetailShow')||/grouped tasks| pt\. \d+$/i.test(title)||(el.classList.contains('personal')&&!/buy lisa|tok commentary/i.test(title))||(el.classList.contains('business')&&!/work/i.test(title))}
+  function dayLooksWednesday(day){return /wed/i.test((day.closest('.dayWrap')||day.parentElement||day).textContent||'')}
 
   function textFits(node,text,reserve){
     if(!node||!text)return true;
@@ -96,12 +105,13 @@
       btn.onclick=function(ev){ev.stopPropagation();showSyntheticDetails(el,btn)};
       el.appendChild(btn);
     }
+    btn.textContent='DETAILS';
     return btn;
   }
 
   function showSyntheticDetails(el,btn){
     const old=document.getElementById('aiDetailFloat');
-    if(old){old.remove();if(btn&&btn.textContent==='HIDE'){btn.textContent='DETAILS';return}}
+    if(old)old.remove();
     document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS');
     const box=document.createElement('div');
     box.id='aiDetailFloat';box.className='aiDetailFloat';
@@ -111,7 +121,7 @@
     details.forEach(x=>{const d=document.createElement('div');d.textContent='• '+x;box.appendChild(d)});
     document.body.appendChild(box);
     const r=el.getBoundingClientRect();box.style.left=Math.min(window.innerWidth-430,Math.max(8,r.left+6))+'px';box.style.top=Math.min(window.innerHeight-180,Math.max(8,r.bottom+6))+'px';
-    if(btn)btn.textContent='HIDE';
+    if(btn)btn.textContent='DETAILS';
   }
 
   function markDetails(el){
@@ -125,13 +135,14 @@
     if(needs)ensureDetailButton(el);
     el.classList.toggle('aiNeedsDetails',needs);
     const btn=el.querySelector('.aiDetailShow');
-    if(btn&&!needs)btn.textContent='DETAILS';
+    if(btn)btn.textContent='DETAILS';
     if(time)time.style.paddingRight=needs?'82px':'';
   }
 
   function normalizeDay(day){
     Array.from(day.querySelectorAll('.event')).forEach(el=>{if(el.classList.contains('break')||el.classList.contains('aiBreakHidden')||isAvailable(el))el.remove()});
     const rows=[];
+    const isWed=dayLooksWednesday(day);
     day.querySelectorAll('.event').forEach(el=>{
       const time=el.querySelector('.time');
       if(!time)return;
@@ -149,12 +160,13 @@
       let start=Math.max(r.t.start,lastEnd);
       let end=r.t.end;
       let duration=end-r.t.start;
+      let title=cleanTitle(el.dataset.stableBaseTitle||(titleEl&&titleEl.textContent)||'');
+      if(titleEl&&!el.dataset.stableBaseTitle)el.dataset.stableBaseTitle=title;
       if(el.classList.contains('wind'))duration=30;
+      if(/\bwork\b/i.test(title)&&isWed){end=21*60+20;duration=end-r.t.start;}
       if(duration<1)duration=1;
       end=start+duration;
       lastEnd=end;
-      let title=cleanTitle(el.dataset.stableBaseTitle||(titleEl&&titleEl.textContent)||'');
-      if(titleEl&&!el.dataset.stableBaseTitle)el.dataset.stableBaseTitle=title;
       if(el.classList.contains('wind'))title='Wind down';
       if(el.classList.contains('homework'))title=cleanTitle(title||'Homework');
       const oneLine=end-start<=30||el.classList.contains('homework')||el.classList.contains('wind');
@@ -167,7 +179,7 @@
       if(el.style.top!==newTop)el.style.top=newTop;
       const newHeight=(duration*PX)+'px';
       const baseHeight=parseFloat(el.dataset.stableBaseHeight||'0')||0;
-      if(baseHeight && (el.classList.contains('wind')||start!==r.t.start||shiftedTop!==naturalTop) && el.style.height!==newHeight)el.style.height=newHeight;
+      if(baseHeight && (el.classList.contains('wind')||/\bwork\b/i.test(title)||start!==r.t.start||shiftedTop!==naturalTop) && el.style.height!==newHeight)el.style.height=newHeight;
       lastBottomPx=shiftedTop+duration*PX;
       el.classList.toggle('aiOneLineSmall',oneLine);
       el.classList.toggle('aiTallBlock',end-start>45&&!el.classList.contains('homework')&&!el.classList.contains('wind'));
