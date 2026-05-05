@@ -1,5 +1,5 @@
 // Loads the newest stable Personal OS layer, then applies stable small-block layout without jitter.
-// UI patch version: newest-stable-v5
+// UI patch version: newest-stable-v6
 (function(){
   const BASE_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATE_KEY='personalOS.schedule.v5';
@@ -29,9 +29,10 @@
   }
 
   function injectCss(){
-    let s=document.getElementById('assistant-stable-v5-fixes');
-    if(!s){s=document.createElement('style');s.id='assistant-stable-v5-fixes';document.head.appendChild(s)}
+    let s=document.getElementById('assistant-stable-v6-fixes');
+    if(!s){s=document.createElement('style');s.id='assistant-stable-v6-fixes';document.head.appendChild(s)}
     s.textContent=`
+      #addBlock{display:none!important}
       #revertWeek{display:none!important}
       body:not(.aiScheduleActive) #prev,body:not(.aiScheduleActive) #next,body:not(.aiScheduleActive) #today{display:none!important}
       #scheduleView .event.break,#scheduleView .event.aiBreakHidden,#scheduleView .event.aiFreeHidden,#scheduleView .event.focus:not(.business):not(.personal),#scheduleView .event.deep:not(.business):not(.personal){display:none!important}
@@ -45,7 +46,7 @@
       #scheduleView .event.aiTallBlock{display:block!important;text-align:left!important}
       #scheduleView .event.homework .title,#scheduleView .event.wind .title{display:none!important}
       #scheduleView .event.homework .time,#scheduleView .event.wind .time{white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important;font-size:11.5px!important;letter-spacing:-.015em!important;line-height:1!important}
-      #aiCostBadge,.aiCostBadge{position:absolute!important;top:114px!important;right:24px!important;left:auto!important;bottom:auto!important;transform:none!important;z-index:40!important}
+      #aiCostBadge,.aiCostBadge{position:absolute!important;top:114px!important;right:24px!important;left:auto!important;bottom:auto!important;transform:none!important;z-index:40!important;display:flex!important}
       .app{position:relative!important}
     `;
     document.head.appendChild(s);
@@ -151,15 +152,24 @@
 
   function schedule(force){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;apply(force)})}
 
+  function loadAssistant(){
+    if(document.getElementById('aiChatButton'))return;
+    const s=document.createElement('script');
+    s.src='./assistant.js?v='+Date.now();
+    s.async=false;
+    document.head.appendChild(s);
+  }
+
   cleanupTodayTaskBlocks();
   injectCss();
   fetch(BASE_URL,{cache:'no-store'}).then(r=>r.text()).then(code=>{
     (0,eval)(code);
+    loadAssistant();
     cleanupTodayTaskBlocks();
     try{if(typeof render==='function')render()}catch(e){}
-    schedule(true);setTimeout(()=>schedule(true),100);setTimeout(()=>schedule(true),500);
+    schedule(true);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},100);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},500);setTimeout(()=>{loadAssistant();placeCost()},1200);
     const root=document.getElementById('scheduleView')||document.body;
     new MutationObserver(()=>schedule(false)).observe(root,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']});
-    setInterval(()=>{applyNav();placeCost();hardProgressZeroFuture()},300);
-  }).catch(()=>{schedule(true);setInterval(()=>{applyNav();placeCost();hardProgressZeroFuture()},300)});
+    setInterval(()=>{loadAssistant();applyNav();placeCost();hardProgressZeroFuture()},300);
+  }).catch(()=>{loadAssistant();schedule(true);setInterval(()=>{loadAssistant();applyNav();placeCost();hardProgressZeroFuture()},300)});
 })();
