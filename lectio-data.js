@@ -1,107 +1,95 @@
-// Loads the v3 Personal OS layer, then applies stable schedule/progress UI fixes.
-// UI patch version: details-fix-v5
+// Loads the v5 Personal OS layer, then applies final stable navigation/schedule/progress fixes.
+// UI patch version: details-fix-v6
 (function(){
-  const PREV_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/6d9b1856212b0cac9507d3897cba6ab9e3368f0b/lectio-data.js';
+  const PREV_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/f47597a0f6bf97b975647c8239fd2deaecab9c82/lectio-data.js';
   const STATS_KEY='personalOS.todoStats.v2';
-  let lockedDetailLeft='';
-  let lockedDetailTop='';
-  let lastSignature='';
-  let ticking=false;
+  let lastProgressSig='';
+  let windAdjusted=false;
 
-  function injectV5Style(){
-    let style=document.getElementById('assistant-details-fix-v5');
+  function injectV6Style(){
+    let style=document.getElementById('assistant-details-fix-v6');
     if(!style){
       style=document.createElement('style');
-      style.id='assistant-details-fix-v5';
+      style.id='assistant-details-fix-v6';
       document.head.appendChild(style);
     }
     style.textContent=`
-      #scheduleView .event{display:block!important;text-align:left!important;align-items:initial!important;justify-content:initial!important;overflow:hidden!important}
-      #scheduleView .event .time{display:block!important;text-align:left!important;line-height:1.05!important;font-weight:850!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:100%!important}
+      #revertWeek{display:none!important}
+      body:not(.aiScheduleActive) #prev,body:not(.aiScheduleActive) #next,body:not(.aiScheduleActive) #today{display:none!important}
+      #scheduleView .event.break,#scheduleView .event.aiBreakHidden,#scheduleView .event.routine,#scheduleView .event.evening{display:none!important}
+      #scheduleView .event{display:block!important;text-align:left!important;overflow:hidden!important}
+      #scheduleView .event .time{display:block!important;text-align:left!important;font-weight:850!important;line-height:1.05!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:100%!important}
       #scheduleView .event .title{display:block!important;text-align:left!important;font-weight:800!important;line-height:1.12!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:100%!important}
-      #scheduleView .event.aiShortBlock{display:flex!important;flex-direction:column!important;justify-content:center!important;align-items:stretch!important}
-      #scheduleView .event.aiTallBlock{display:block!important;justify-content:initial!important;align-items:initial!important}
-      #scheduleView .event.aiCompact{display:flex!important;flex-direction:column!important;justify-content:center!important;align-items:stretch!important;padding-top:2px!important;padding-bottom:2px!important}
+      #scheduleView .event.aiShortBlock{display:flex!important;flex-direction:column!important;justify-content:center!important;align-items:stretch!important;text-align:left!important}
+      #scheduleView .event.aiTallBlock{display:block!important;justify-content:initial!important;align-items:initial!important;text-align:left!important}
+      #scheduleView .event.aiCompact{display:flex!important;flex-direction:column!important;justify-content:center!important;align-items:stretch!important;padding-top:2px!important;padding-bottom:2px!important;text-align:left!important}
       #scheduleView .event.aiCompact .time{font-size:12px!important;text-align:left!important;display:block!important;width:100%!important;line-height:1!important;font-weight:850!important}
       #scheduleView .event.aiCompact .title{display:none!important}
-      #scheduleView .event.homework .time,#scheduleView .event.homework .title{font-size:12px!important;text-align:left!important;font-weight:800!important}
-      #scheduleView .event.aiHasDetails .time{padding-right:82px!important;box-sizing:border-box!important}
-      #scheduleView .event.aiHasDetails .title{padding-right:0!important;box-sizing:border-box!important}
-      #scheduleView .event .aiDetailShow{position:absolute!important;right:8px!important;top:4px!important;height:20px!important;min-height:20px!important;line-height:18px!important;width:auto!important;min-width:0!important;max-width:none!important;padding:0 9px!important;border-radius:999px!important;font-size:11px!important;font-weight:900!important;letter-spacing:.04em!important;z-index:5!important;margin:0!important;transform:none!important}
-      #scheduleView .event.small .aiDetailShow,#scheduleView .event.aiCompact .aiDetailShow{top:3px!important;height:18px!important;min-height:18px!important;line-height:16px!important;font-size:10.5px!important;padding:0 8px!important}
-      .aiDetailFloat{position:fixed!important;z-index:120!important;max-width:360px!important;font-size:13.5px!important;line-height:1.35!important;background:#100b1b!important;border:1px solid #7f52ff!important;border-radius:10px!important;padding:10px 12px!important;box-shadow:0 14px 38px rgba(0,0,0,.48)!important;color:#f7f3ff!important;pointer-events:auto!important;transform:none!important}
-      .aiDetailFloat div{font-size:13.5px!important}
-      .aiDetailFloatTitle{font-size:13.5px!important;font-weight:850!important;margin-bottom:4px!important}
+      #scheduleView .event.homework{display:flex!important;flex-direction:column!important;justify-content:center!important;align-items:stretch!important;text-align:left!important}
+      #scheduleView .event.homework .time,#scheduleView .event.homework .title{font-size:12px!important;text-align:left!important;font-weight:800!important;display:block!important;width:100%!important}
+      #scheduleView .event.wind{display:flex!important;flex-direction:column!important;justify-content:center!important;align-items:stretch!important;text-align:left!important}
+      #scheduleView .event.wind .time,#scheduleView .event.wind .title{text-align:left!important}
     `;
     document.head.appendChild(style);
   }
 
-  function minutesFromEvent(el){
-    const txt=(el.querySelector('.time')||{}).textContent||'';
-    const m=txt.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+  function activeTabId(){
+    const active=document.querySelector('.tab.active');
+    return active&&active.getAttribute('data-tab')||'';
+  }
+
+  function applyNavVisibility(){
+    document.body.classList.toggle('aiScheduleActive',activeTabId()==='scheduleView');
+  }
+
+  function parseTimeText(txt){
+    const m=String(txt||'').match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
     if(!m)return null;
-    return Number(m[3])*60+Number(m[4])-(Number(m[1])*60+Number(m[2]));
+    const start=Number(m[1])*60+Number(m[2]);
+    const end=Number(m[3])*60+Number(m[4]);
+    return {start,end,raw:m[0]};
+  }
+
+  function hm(mins){
+    return String(Math.floor(mins/60)).padStart(2,'0')+':'+String(mins%60).padStart(2,'0');
   }
 
   function normalizeScheduleBlocks(){
     document.querySelectorAll('#scheduleView .event').forEach(el=>{
-      const dur=minutesFromEvent(el);
+      const timeEl=el.querySelector('.time');
+      const t=parseTimeText(timeEl&&timeEl.textContent);
+      if(el.classList.contains('wind') && timeEl && t && !el.dataset.aiWindExtended){
+        const nextEnd=t.end+5;
+        timeEl.textContent=timeEl.textContent.replace(t.raw,hm(t.start)+'-'+hm(nextEnd));
+        const h=parseFloat(el.style.height||'0');
+        if(h)el.style.height=(h+(5*1.22))+'px';
+        el.dataset.aiWindExtended='1';
+      }
+      const dur=t?t.end-t.start:null;
       el.classList.toggle('aiShortBlock',!!dur && dur<=45);
       el.classList.toggle('aiTallBlock',!!dur && dur>45);
-      const has=!!el.querySelector('.aiDetailShow');
-      el.classList.toggle('aiHasDetails',has);
+      if(timeEl){timeEl.style.textAlign='left';timeEl.style.fontWeight='850'}
       const title=el.querySelector('.title');
-      const time=el.querySelector('.time');
-      if(title){
-        title.style.textAlign='left';
-        title.style.fontWeight='800';
-      }
-      if(time){
-        time.style.textAlign='left';
-        time.style.fontWeight='850';
-      }
+      if(title){title.style.textAlign='left';title.style.fontWeight='800'}
     });
+    windAdjusted=true;
   }
 
-  function lockDetailFloat(){
-    const box=document.getElementById('aiDetailFloat');
-    if(!box)return;
-    const r=box.getBoundingClientRect();
-    if(!lockedDetailLeft)lockedDetailLeft=Math.round(r.left)+'px';
-    if(!lockedDetailTop)lockedDetailTop=Math.round(r.top)+'px';
-    box.style.position='fixed';
-    box.style.left=lockedDetailLeft;
-    box.style.top=lockedDetailTop;
-  }
-
-  function restoreLockedDetailFloat(){
-    const box=document.getElementById('aiDetailFloat');
-    if(!box || !lockedDetailLeft || !lockedDetailTop)return;
-    box.style.position='fixed';
-    box.style.left=lockedDetailLeft;
-    box.style.top=lockedDetailTop;
-  }
-
-  function afterDetailsClick(e){
-    if(!e.target.closest || !e.target.closest('.aiDetailShow'))return;
-    lockedDetailLeft='';
-    lockedDetailTop='';
-    setTimeout(lockDetailFloat,0);
-    setTimeout(lockDetailFloat,80);
-  }
-
-  function todayName(){
-    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()];
-  }
-
-  function isoDateForUpcomingDay(dayName){
-    const names=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    const wanted=names.indexOf(dayName);
-    if(wanted<0)return '';
+  function todayStart(){
     const d=new Date();
-    const diff=(wanted-d.getDay()+7)%7;
-    d.setDate(d.getDate()+diff);
-    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    return new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  }
+
+  function purgeFutureStats(){
+    let stats={};
+    try{stats=JSON.parse(localStorage.getItem(STATS_KEY)||'{}')||{}}catch(e){}
+    let changed=false;
+    const today=todayStart();
+    Object.keys(stats).forEach(k=>{
+      const d=new Date(k+'T00:00:00');
+      if(d>today){delete stats[k];changed=true;}
+    });
+    if(changed)localStorage.setItem(STATS_KEY,JSON.stringify(stats));
   }
 
   function currentTaskCompletionPct(){
@@ -116,27 +104,22 @@
     return Math.round(done/realRows.length*100);
   }
 
-  function stableProgressFix(){
+  function todayName(){
+    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()];
+  }
+
+  function hardSetProgress(){
+    purgeFutureStats();
     const side=document.querySelector('#todoView .todoSide');
     if(!side)return;
     const today=todayName();
     const todayPct=currentTaskCompletionPct();
-    let stats={};
-    try{stats=JSON.parse(localStorage.getItem(STATS_KEY)||'{}')||{}}catch(e){}
+    const sig=todayPct+'|'+Array.from(side.querySelectorAll('.todoDay')).map(c=>c.textContent).join('~');
+    lastProgressSig=sig;
     Array.from(side.querySelectorAll('.todoDay')).forEach(card=>{
       const label=((card.querySelector('.todoDayTop span')||{}).textContent||card.textContent||'').trim();
-      const day=(label.match(/Today|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/i)||[])[0];
-      let pct=0;
-      if(/^Today$/i.test(day||'') || new RegExp('^'+today+'$','i').test(day||'')){
-        pct=todayPct;
-      }else{
-        const dateKey=isoDateForUpcomingDay(day||'');
-        const rec=dateKey?stats[dateKey]:null;
-        pct=rec&&typeof rec.pct==='number'?rec.pct:0;
-        const now=new Date();
-        const d=dateKey?new Date(dateKey+'T00:00:00'):null;
-        if(d && d>new Date(now.getFullYear(),now.getMonth(),now.getDate()))pct=0;
-      }
+      const isToday=/^Today/i.test(label)||new RegExp('^'+today+'\\b','i').test(label);
+      const pct=isToday?todayPct:0;
       const top=card.querySelector('.todoDayTop');
       const fill=card.querySelector('.todoBarFill');
       if(top){const spans=top.querySelectorAll('span');if(spans[1])spans[1].textContent=pct+'%'}
@@ -144,55 +127,37 @@
     });
   }
 
-  function signature(){
-    const events=Array.from(document.querySelectorAll('#scheduleView .event')).map(el=>{
-      const time=(el.querySelector('.time')||{}).textContent||'';
-      const title=(el.querySelector('.title')||{}).textContent||'';
-      const details=el.querySelector('.aiDetailShow')?'1':'0';
-      return time+'|'+title+'|'+details;
-    }).join('~');
-    const checks=Array.from(document.querySelectorAll('#todoView input[type=checkbox]')).map(cb=>cb.checked?'1':'0').join('');
-    return events+'::'+checks;
+  function removePurpleBreaks(){
+    document.querySelectorAll('#scheduleView .event.break,#scheduleView .event.routine,#scheduleView .event.evening,#scheduleView .event.aiBreakHidden').forEach(el=>el.remove());
   }
 
-  function applyV5(force){
-    injectV5Style();
-    const sig=signature();
-    if(force || sig!==lastSignature){
-      normalizeScheduleBlocks();
-      stableProgressFix();
-      lastSignature=sig;
-    }else{
-      restoreLockedDetailFloat();
-    }
+  function applyV6(){
+    injectV6Style();
+    applyNavVisibility();
+    normalizeScheduleBlocks();
+    removePurpleBreaks();
+    hardSetProgress();
   }
 
-  function scheduleApply(force){
-    if(ticking)return;
-    ticking=true;
-    requestAnimationFrame(function(){
-      ticking=false;
-      applyV5(force);
-    });
-  }
+  document.addEventListener('click',function(e){
+    if(e.target.closest&&e.target.closest('.tab'))setTimeout(applyV6,0);
+    setTimeout(hardSetProgress,0);
+    setTimeout(hardSetProgress,120);
+  },true);
+  document.addEventListener('change',function(){setTimeout(hardSetProgress,0);setTimeout(hardSetProgress,120)},true);
 
-  document.addEventListener('click',function(e){afterDetailsClick(e);setTimeout(function(){scheduleApply(true)},0)},true);
-  document.addEventListener('change',function(){setTimeout(function(){scheduleApply(true)},0)},true);
-  window.addEventListener('scroll',function(){restoreLockedDetailFloat()},true);
-  window.addEventListener('resize',function(){lockedDetailLeft='';lockedDetailTop='';setTimeout(lockDetailFloat,0);scheduleApply(true)});
-
-  function startV5(){
-    scheduleApply(true);
-    setTimeout(function(){scheduleApply(true)},0);
-    setTimeout(function(){scheduleApply(true)},100);
-    setTimeout(function(){scheduleApply(true)},350);
-    const mo=new MutationObserver(function(){scheduleApply(false)});
-    mo.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']});
-    setInterval(function(){scheduleApply(false)},750);
+  function startV6(){
+    applyV6();
+    setTimeout(applyV6,0);
+    setTimeout(applyV6,120);
+    setTimeout(applyV6,500);
+    const mo=new MutationObserver(function(){applyNavVisibility();removePurpleBreaks();normalizeScheduleBlocks();hardSetProgress();});
+    mo.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['class','style']});
+    setInterval(applyV6,200);
   }
 
   fetch(PREV_URL,{cache:'no-store'})
     .then(r=>r.text())
-    .then(code=>{(0,eval)(code);startV5();})
-    .catch(()=>startV5());
+    .then(code=>{(0,eval)(code);startV6();})
+    .catch(()=>startV6());
 })();
