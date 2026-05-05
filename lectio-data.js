@@ -1,9 +1,8 @@
-// Loads the newest stable Personal OS layer, then applies stable small-block layout without jitter.
-// UI patch version: newest-stable-v8
+// Loads the newest stable Personal OS layer, then applies stable no-overlap layout and locked AI task blocks.
+// UI patch version: newest-stable-v9
 (function(){
   const BASE_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATE_KEY='personalOS.schedule.v5';
-  const STATS_KEY='personalOS.todoStats.v2';
   const PX=1.22;
   let appliedHash='';
   let raf=0;
@@ -38,13 +37,15 @@
   }
 
   function injectCss(){
-    let s=document.getElementById('assistant-stable-v8-fixes');
-    if(!s){s=document.createElement('style');s.id='assistant-stable-v8-fixes';document.head.appendChild(s)}
+    let s=document.getElementById('assistant-stable-v9-fixes');
+    if(!s){s=document.createElement('style');s.id='assistant-stable-v9-fixes';document.head.appendChild(s)}
     s.textContent=`
       #addBlock{display:none!important}
       #revertWeek{display:none!important}
       body:not(.aiScheduleActive) #prev,body:not(.aiScheduleActive) #next,body:not(.aiScheduleActive) #today{display:none!important}
       #scheduleView .event.break,#scheduleView .event.aiBreakHidden,#scheduleView .event.aiFreeHidden,#scheduleView .event.focus:not(.business):not(.personal),#scheduleView .event.deep:not(.business):not(.personal){display:none!important}
+      #scheduleView .event.aiLockedGenerated{cursor:default!important}
+      #scheduleView .event.aiLockedGenerated .aiDetailShow{pointer-events:auto!important}
       #scheduleView .event .aiDetailShow{display:none!important}
       #scheduleView .event.aiNeedsDetails .aiDetailShow{display:inline-flex!important;position:absolute!important;right:8px!important;top:4px!important;height:20px!important;min-height:20px!important;line-height:18px!important;width:auto!important;min-width:0!important;padding:0 9px!important;border-radius:999px!important;font-size:11px!important;font-weight:900!important;letter-spacing:.04em!important;z-index:5!important;margin:0!important;transform:none!important}
       #scheduleView .event .time{font-weight:850!important;text-align:left!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:100%!important}
@@ -55,6 +56,9 @@
       #scheduleView .event.aiTallBlock{display:block!important;text-align:left!important}
       #scheduleView .event.homework .title,#scheduleView .event.wind .title{display:none!important}
       #scheduleView .event.homework .time,#scheduleView .event.wind .time{white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important;font-size:11.5px!important;letter-spacing:-.015em!important;line-height:1!important}
+      .aiDetailFloat{font-size:13.5px!important;line-height:1.35!important;max-width:420px!important}
+      .aiDetailFloat div{font-size:13.5px!important}
+      .aiDetailFloatTitle{font-size:13px!important;font-weight:900!important}
       #aiCostBadge,.aiCostBadge{position:absolute!important;top:114px!important;right:24px!important;left:auto!important;bottom:auto!important;transform:none!important;z-index:40!important;display:flex!important}
       .app{position:relative!important}
     `;
@@ -68,6 +72,7 @@
   function hm(x){return String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0')}
   function cleanTitle(text){return String(text||'').replace(/^\s*2i\s+/i,'').replace(/^\s*available block\s*$/i,'').replace(/\s+/g,' ').trim()}
   function isAvailable(el){const title=cleanTitle((el.querySelector('.title')||{}).textContent||'');return /^available block$/i.test(title)||el.classList.contains('aiFreeHidden')||((el.classList.contains('focus')||el.classList.contains('deep'))&&!el.classList.contains('business')&&!el.classList.contains('personal'))}
+  function looksGenerated(el){const title=cleanTitle((el.querySelector('.title')||{}).textContent||'');return el.classList.contains('aiNeedsDetails')||el.querySelector('.aiDetailShow')||/grouped tasks| pt\. \d+$/i.test(title)||(el.classList.contains('personal')&&!/buy lisa|tok commentary/i.test(title))||(el.classList.contains('business')&&!/work/i.test(title))}
 
   function textFits(node,text,reserve){
     if(!node||!text)return true;
@@ -104,7 +109,7 @@
     const details=(el.dataset.aiTaskTexts||txt).split('||').filter(Boolean);
     details.forEach(x=>{const d=document.createElement('div');d.textContent='• '+x;box.appendChild(d)});
     document.body.appendChild(box);
-    const r=el.getBoundingClientRect();box.style.left=Math.min(window.innerWidth-370,Math.max(8,r.left+6))+'px';box.style.top=Math.min(window.innerHeight-180,Math.max(8,r.bottom+6))+'px';
+    const r=el.getBoundingClientRect();box.style.left=Math.min(window.innerWidth-430,Math.max(8,r.left+6))+'px';box.style.top=Math.min(window.innerHeight-180,Math.max(8,r.bottom+6))+'px';
     if(btn)btn.textContent='HIDE';
   }
 
@@ -135,25 +140,35 @@
       const t=parseTime(el.dataset.stableBaseTime);
       if(t)rows.push({el,t});
     });
-    const windEnds=[];
+    rows.sort((a,b)=>a.t.start-b.t.start || a.t.end-b.t.end);
+    let lastEnd=0;
     rows.forEach(r=>{
       const el=r.el,time=el.querySelector('.time'),titleEl=el.querySelector('.title');
-      const start=r.t.start;
+      let start=Math.max(r.t.start,lastEnd);
       let end=r.t.end;
-      const dur=end-start;
+      let duration=end-r.t.start;
+      if(el.classList.contains('wind'))duration=30;
+      if(duration<1)duration=1;
+      end=start+duration;
+      lastEnd=end;
       let title=cleanTitle(el.dataset.stableBaseTitle||(titleEl&&titleEl.textContent)||'');
       if(titleEl&&!el.dataset.stableBaseTitle)el.dataset.stableBaseTitle=title;
-      if(el.classList.contains('wind')){title='Wind down';if(end-start!==30)end=start+30;}
+      if(el.classList.contains('wind'))title='Wind down';
       if(el.classList.contains('homework'))title=cleanTitle(title||'Homework');
-      const newTimeText=(dur<=30||el.classList.contains('homework')||el.classList.contains('wind'))?(hm(start)+'-'+hm(end)+' '+title):String(el.dataset.stableBaseTime).replace(r.t.raw,hm(start)+'-'+hm(end));
+      const oneLine=end-start<=30||el.classList.contains('homework')||el.classList.contains('wind');
+      const newTimeText=oneLine?(hm(start)+'-'+hm(end)+' '+title):String(el.dataset.stableBaseTime).replace(r.t.raw,hm(start)+'-'+hm(end));
       if(time.textContent!==newTimeText)time.textContent=newTimeText;
-      if(el.classList.contains('wind')){
-        const baseHeight=parseFloat(el.dataset.stableBaseHeight||'0')||0;
-        if(baseHeight){const h=(30*PX)+'px';if(el.style.height!==h)el.style.height=h;}
-      }
-      el.classList.toggle('aiOneLineSmall',end-start<=30||el.classList.contains('homework')||el.classList.contains('wind'));
+      const baseTop=parseFloat(el.dataset.stableBaseTop||'0')||0;
+      const shiftedTop=baseTop+(start-r.t.start)*PX;
+      const newTop=shiftedTop+'px';
+      if(el.style.top!==newTop)el.style.top=newTop;
+      const newHeight=(duration*PX)+'px';
+      const baseHeight=parseFloat(el.dataset.stableBaseHeight||'0')||0;
+      if(baseHeight && (el.classList.contains('wind')||start!==r.t.start) && el.style.height!==newHeight)el.style.height=newHeight;
+      el.classList.toggle('aiOneLineSmall',oneLine);
       el.classList.toggle('aiTallBlock',end-start>45&&!el.classList.contains('homework')&&!el.classList.contains('wind'));
-      if(titleEl){titleEl.textContent=title;titleEl.style.fontWeight='800';if(end-start<=30||el.classList.contains('homework')||el.classList.contains('wind'))titleEl.style.display='none';}
+      el.classList.toggle('aiLockedGenerated',looksGenerated(el));
+      if(titleEl){titleEl.textContent=title;titleEl.style.fontWeight='800';if(oneLine)titleEl.style.display='none';}
       if(time){time.style.fontWeight='850';time.style.textAlign='left';}
       markDetails(el);
     });
@@ -175,11 +190,15 @@
     });
   }
 
+  function closeDetails(){const f=document.getElementById('aiDetailFloat');if(f){f.remove();document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS')}}
   function domHash(){return Array.from(document.querySelectorAll('#scheduleView .event')).map(el=>[(el.querySelector('.time')||{}).textContent,(el.querySelector('.title')||{}).textContent,el.className,el.style.top,el.style.height].join('|')).join('~')+'::'+Array.from(document.querySelectorAll('#todoView input[type=checkbox]')).map(cb=>cb.checked?'1':'0').join('')}
   function apply(force){injectCss();applyNav();placeCost();const h=domHash();if(force||h!==appliedHash){document.querySelectorAll('#scheduleView .day').forEach(normalizeDay);appliedHash=domHash();}hardProgressZeroFuture()}
   function schedule(force){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;apply(force)})}
   function loadAssistant(){if(document.getElementById('aiChatButton'))return;const s=document.createElement('script');s.src='./assistant.js?v='+Date.now();s.async=false;document.head.appendChild(s)}
 
   cleanupInvalidTaskBlocks();injectCss();
+  document.addEventListener('click',function(e){const ev=e.target&&e.target.closest&&e.target.closest('#scheduleView .event.aiLockedGenerated');if(ev&&!e.target.closest('.aiDetailShow')){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation&&e.stopImmediatePropagation()}},true);
+  document.addEventListener('dblclick',function(e){const ev=e.target&&e.target.closest&&e.target.closest('#scheduleView .event.aiLockedGenerated');if(ev){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation&&e.stopImmediatePropagation()}},true);
+  window.addEventListener('scroll',closeDetails,true);
   fetch(BASE_URL,{cache:'no-store'}).then(r=>r.text()).then(code=>{(0,eval)(code);loadAssistant();cleanupInvalidTaskBlocks();try{if(typeof render==='function')render()}catch(e){}schedule(true);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},100);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},500);setTimeout(()=>{loadAssistant();placeCost()},1200);const root=document.getElementById('scheduleView')||document.body;new MutationObserver(()=>schedule(false)).observe(root,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']});setInterval(()=>{loadAssistant();applyNav();placeCost();hardProgressZeroFuture()},300)}).catch(()=>{loadAssistant();schedule(true);setInterval(()=>{loadAssistant();applyNav();placeCost();hardProgressZeroFuture()},300)});
 })();
