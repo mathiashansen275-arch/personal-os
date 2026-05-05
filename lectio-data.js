@@ -1,9 +1,10 @@
 // Loads the newest stable Personal OS layer, then applies stable no-overlap layout and locked AI task blocks.
-// UI patch version: newest-stable-v9
+// UI patch version: newest-stable-v10
 (function(){
   const BASE_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATE_KEY='personalOS.schedule.v5';
   const PX=1.22;
+  const GAP_PX=1;
   let appliedHash='';
   let raf=0;
 
@@ -37,8 +38,8 @@
   }
 
   function injectCss(){
-    let s=document.getElementById('assistant-stable-v9-fixes');
-    if(!s){s=document.createElement('style');s.id='assistant-stable-v9-fixes';document.head.appendChild(s)}
+    let s=document.getElementById('assistant-stable-v10-fixes');
+    if(!s){s=document.createElement('style');s.id='assistant-stable-v10-fixes';document.head.appendChild(s)}
     s.textContent=`
       #addBlock{display:none!important}
       #revertWeek{display:none!important}
@@ -142,6 +143,7 @@
     });
     rows.sort((a,b)=>a.t.start-b.t.start || a.t.end-b.t.end);
     let lastEnd=0;
+    let lastBottomPx=-GAP_PX;
     rows.forEach(r=>{
       const el=r.el,time=el.querySelector('.time'),titleEl=el.querySelector('.title');
       let start=Math.max(r.t.start,lastEnd);
@@ -159,12 +161,14 @@
       const newTimeText=oneLine?(hm(start)+'-'+hm(end)+' '+title):String(el.dataset.stableBaseTime).replace(r.t.raw,hm(start)+'-'+hm(end));
       if(time.textContent!==newTimeText)time.textContent=newTimeText;
       const baseTop=parseFloat(el.dataset.stableBaseTop||'0')||0;
-      const shiftedTop=baseTop+(start-r.t.start)*PX;
+      const naturalTop=baseTop+(start-r.t.start)*PX;
+      const shiftedTop=Math.max(naturalTop,lastBottomPx+GAP_PX);
       const newTop=shiftedTop+'px';
       if(el.style.top!==newTop)el.style.top=newTop;
       const newHeight=(duration*PX)+'px';
       const baseHeight=parseFloat(el.dataset.stableBaseHeight||'0')||0;
-      if(baseHeight && (el.classList.contains('wind')||start!==r.t.start) && el.style.height!==newHeight)el.style.height=newHeight;
+      if(baseHeight && (el.classList.contains('wind')||start!==r.t.start||shiftedTop!==naturalTop) && el.style.height!==newHeight)el.style.height=newHeight;
+      lastBottomPx=shiftedTop+duration*PX;
       el.classList.toggle('aiOneLineSmall',oneLine);
       el.classList.toggle('aiTallBlock',end-start>45&&!el.classList.contains('homework')&&!el.classList.contains('wind'));
       el.classList.toggle('aiLockedGenerated',looksGenerated(el));
