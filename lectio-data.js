@@ -7,6 +7,8 @@
     const style=document.createElement('style');
     style.id='assistant-early-visual-overrides';
     style.textContent=`
+      html body #scheduleView .event.time-future:not(.school):not(.homework):not(.trip):not(.wind),html body #scheduleView .day .event.time-future:not(.school):not(.homework):not(.trip):not(.wind){filter:saturate(.78) brightness(.72)!important;opacity:.95!important}
+      html body #scheduleView .event.time-future:not(.school):not(.homework):not(.trip):not(.wind)::before,html body #scheduleView .day .event.time-future:not(.school):not(.homework):not(.trip):not(.wind)::before{opacity:.22!important}
       #scheduleView .event.time-past,.event.time-past{opacity:.82!important;filter:brightness(1.30) saturate(1.08)!important}
       #scheduleView .event.time-past::after,.event.time-past::after{display:none!important;opacity:0!important;background:transparent!important}
       #scheduleView .event.time-past .time,#scheduleView .event.time-past .title,.event.time-past .time,.event.time-past .title{opacity:1!important}
@@ -43,6 +45,8 @@
         .aiChatMessages::-webkit-scrollbar-track{background:#070710!important;border-left:1px solid #211733!important}
         .aiChatMessages::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#8f5cff,#352456)!important;border:2px solid #070710!important;border-radius:999px!important}
         .aiChatMessages::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#b990ff,#49306c)!important}
+        html body #scheduleView .event.time-future:not(.school):not(.homework):not(.trip):not(.wind),html body #scheduleView .day .event.time-future:not(.school):not(.homework):not(.trip):not(.wind){filter:saturate(.78) brightness(.72)!important;opacity:.95!important}
+        html body #scheduleView .event.time-future:not(.school):not(.homework):not(.trip):not(.wind)::before,html body #scheduleView .day .event.time-future:not(.school):not(.homework):not(.trip):not(.wind)::before{opacity:.22!important}
         #scheduleView .event.time-past,.event.time-past{opacity:.82!important;filter:brightness(1.30) saturate(1.08)!important}
         #scheduleView .event.time-past::after,.event.time-past::after{display:none!important;opacity:0!important;background:transparent!important}
         #scheduleView .event.time-past .time,#scheduleView .event.time-past .title,.event.time-past .time,.event.time-past .title{opacity:1!important}
@@ -82,19 +86,27 @@
     }
   }
 
+  function keepOverridesLast(){
+    const early=document.getElementById('assistant-early-visual-overrides');
+    const final=document.getElementById('assistant-position-overrides');
+    if(early&&early.parentNode)document.head.appendChild(early);
+    if(final&&final.parentNode)document.head.appendChild(final);
+  }
+
   function loadAssistant(){
     const s=document.createElement('script');
     s.src='./assistant.js?v='+Date.now();
     s.async=false;
     s.onload=function(){
       applyAssistantPositionOverrides();
-      setInterval(applyAssistantPositionOverrides,700);
+      keepOverridesLast();
+      setInterval(function(){applyAssistantPositionOverrides();keepOverridesLast();},700);
     };
     document.head.appendChild(s);
   }
   injectEarlyVisualOverrides();
   fetch(GOOD_WRAPPER_URL,{cache:'no-store'})
     .then(r=>r.text())
-    .then(code=>{(0,eval)(code);applyAssistantPositionOverrides();setTimeout(loadAssistant,350);})
+    .then(code=>{(0,eval)(code);applyAssistantPositionOverrides();keepOverridesLast();setTimeout(loadAssistant,350);})
     .catch(()=>setTimeout(loadAssistant,350));
 })();
