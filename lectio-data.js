@@ -1,5 +1,5 @@
 // Loads the newest stable Personal OS layer, then applies stable small-block layout without jitter.
-// UI patch version: newest-stable-v7
+// UI patch version: newest-stable-v8
 (function(){
   const BASE_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATE_KEY='personalOS.schedule.v5';
@@ -26,13 +26,20 @@
         const mins=Number(s.slice(0,2))*60+Number(s.slice(3,5));
         return mins>=14*60+45;
       });
+      state.custom.forEach(b=>{
+        const title=String(b.title||'').toLowerCase();
+        if(/evening routine|wind down/.test(title)&&b.start&&b.end){
+          const sm=Number(String(b.start).slice(0,2))*60+Number(String(b.start).slice(3,5));
+          b.end=String(Math.floor((sm+30)/60)).padStart(2,'0')+':'+String((sm+30)%60).padStart(2,'0');
+        }
+      });
       if(state.custom.length!==before)localStorage.setItem(STATE_KEY,JSON.stringify(state));
     }catch(e){}
   }
 
   function injectCss(){
-    let s=document.getElementById('assistant-stable-v7-fixes');
-    if(!s){s=document.createElement('style');s.id='assistant-stable-v7-fixes';document.head.appendChild(s)}
+    let s=document.getElementById('assistant-stable-v8-fixes');
+    if(!s){s=document.createElement('style');s.id='assistant-stable-v8-fixes';document.head.appendChild(s)}
     s.textContent=`
       #addBlock{display:none!important}
       #revertWeek{display:none!important}
@@ -74,15 +81,45 @@
     return ok;
   }
 
+  function ensureDetailButton(el){
+    let btn=el.querySelector('.aiDetailShow');
+    if(!btn){
+      btn=document.createElement('button');
+      btn.className='aiDetailShow';
+      btn.textContent='DETAILS';
+      btn.onclick=function(ev){ev.stopPropagation();showSyntheticDetails(el,btn)};
+      el.appendChild(btn);
+    }
+    return btn;
+  }
+
+  function showSyntheticDetails(el,btn){
+    const old=document.getElementById('aiDetailFloat');
+    if(old){old.remove();if(btn&&btn.textContent==='HIDE'){btn.textContent='DETAILS';return}}
+    document.querySelectorAll('.aiDetailShow').forEach(b=>b.textContent='DETAILS');
+    const box=document.createElement('div');
+    box.id='aiDetailFloat';box.className='aiDetailFloat';
+    const title=document.createElement('div');title.className='aiDetailFloatTitle';title.textContent='Full task';box.appendChild(title);
+    const txt=(el.dataset.aiFullTitle||el.dataset.stableBaseTitle||((el.querySelector('.title')||{}).textContent)||'Task details').trim();
+    const details=(el.dataset.aiTaskTexts||txt).split('||').filter(Boolean);
+    details.forEach(x=>{const d=document.createElement('div');d.textContent='• '+x;box.appendChild(d)});
+    document.body.appendChild(box);
+    const r=el.getBoundingClientRect();box.style.left=Math.min(window.innerWidth-370,Math.max(8,r.left+6))+'px';box.style.top=Math.min(window.innerHeight-180,Math.max(8,r.bottom+6))+'px';
+    if(btn)btn.textContent='HIDE';
+  }
+
   function markDetails(el){
-    const btn=el.querySelector('.aiDetailShow'),title=el.querySelector('.title'),time=el.querySelector('.time');
-    if(!btn||!title){el.classList.remove('aiNeedsDetails');return}
-    const full=cleanTitle(el.dataset.aiFullTitle||title.textContent||'');
+    const title=el.querySelector('.title'),time=el.querySelector('.time');
+    if(!title){el.classList.remove('aiNeedsDetails');return}
+    const full=cleanTitle(el.dataset.aiFullTitle||el.dataset.stableBaseTitle||title.textContent||'');
     const protectedType=el.classList.contains('school')||el.classList.contains('homework')||el.classList.contains('wind');
     const protectedTitle=/^(morning routine|evening routine|wind down)$/i.test(full);
-    const needs=!!full&&!protectedType&&!protectedTitle&&!textFits(title,full,86);
+    const grouped=/grouped tasks/i.test(full)||/ & /.test(full)||el.dataset.aiTaskTexts;
+    const needs=!!full&&!protectedType&&!protectedTitle&&(grouped||!textFits(title,full,86));
+    if(needs)ensureDetailButton(el);
     el.classList.toggle('aiNeedsDetails',needs);
-    if(!needs)btn.textContent='DETAILS';
+    const btn=el.querySelector('.aiDetailShow');
+    if(btn&&!needs)btn.textContent='DETAILS';
     if(time)time.style.paddingRight=needs?'82px':'';
   }
 
@@ -98,28 +135,25 @@
       const t=parseTime(el.dataset.stableBaseTime);
       if(t)rows.push({el,t});
     });
-    const windEnds=rows.filter(r=>r.el.classList.contains('wind')).map(r=>r.t.end).sort((a,b)=>a-b);
+    const windEnds=[];
     rows.forEach(r=>{
       const el=r.el,time=el.querySelector('.time'),titleEl=el.querySelector('.title');
-      const shift=windEnds.filter(end=>end<=r.t.start).length*5;
-      const start=r.t.start+shift;
-      const end=r.t.end+shift+(el.classList.contains('wind')?5:0);
+      const start=r.t.start;
+      let end=r.t.end;
       const dur=end-start;
       let title=cleanTitle(el.dataset.stableBaseTitle||(titleEl&&titleEl.textContent)||'');
       if(titleEl&&!el.dataset.stableBaseTitle)el.dataset.stableBaseTitle=title;
-      if(el.classList.contains('wind'))title='Wind down';
+      if(el.classList.contains('wind')){title='Wind down';if(end-start!==30)end=start+30;}
       if(el.classList.contains('homework'))title=cleanTitle(title||'Homework');
       const newTimeText=(dur<=30||el.classList.contains('homework')||el.classList.contains('wind'))?(hm(start)+'-'+hm(end)+' '+title):String(el.dataset.stableBaseTime).replace(r.t.raw,hm(start)+'-'+hm(end));
       if(time.textContent!==newTimeText)time.textContent=newTimeText;
-      const newTop=((parseFloat(el.dataset.stableBaseTop||'0')||0)+shift*PX)+'px';
-      if(el.style.top!==newTop)el.style.top=newTop;
       if(el.classList.contains('wind')){
         const baseHeight=parseFloat(el.dataset.stableBaseHeight||'0')||0;
-        if(baseHeight){const h=(baseHeight+5*PX)+'px';if(el.style.height!==h)el.style.height=h;}
+        if(baseHeight){const h=(30*PX)+'px';if(el.style.height!==h)el.style.height=h;}
       }
-      el.classList.toggle('aiOneLineSmall',dur<=30||el.classList.contains('homework')||el.classList.contains('wind'));
-      el.classList.toggle('aiTallBlock',dur>45&&!el.classList.contains('homework')&&!el.classList.contains('wind'));
-      if(titleEl){titleEl.textContent=title;titleEl.style.fontWeight='800';if(dur<=30||el.classList.contains('homework')||el.classList.contains('wind'))titleEl.style.display='none';}
+      el.classList.toggle('aiOneLineSmall',end-start<=30||el.classList.contains('homework')||el.classList.contains('wind'));
+      el.classList.toggle('aiTallBlock',end-start>45&&!el.classList.contains('homework')&&!el.classList.contains('wind'));
+      if(titleEl){titleEl.textContent=title;titleEl.style.fontWeight='800';if(end-start<=30||el.classList.contains('homework')||el.classList.contains('wind'))titleEl.style.display='none';}
       if(time){time.style.fontWeight='850';time.style.textAlign='left';}
       markDetails(el);
     });
@@ -141,37 +175,11 @@
     });
   }
 
-  function domHash(){
-    return Array.from(document.querySelectorAll('#scheduleView .event')).map(el=>[(el.querySelector('.time')||{}).textContent,(el.querySelector('.title')||{}).textContent,el.className,el.style.top,el.style.height].join('|')).join('~')+'::'+Array.from(document.querySelectorAll('#todoView input[type=checkbox]')).map(cb=>cb.checked?'1':'0').join('');
-  }
-
-  function apply(force){
-    injectCss();applyNav();placeCost();
-    const h=domHash();
-    if(force||h!==appliedHash){document.querySelectorAll('#scheduleView .day').forEach(normalizeDay);appliedHash=domHash();}
-    hardProgressZeroFuture();
-  }
-
+  function domHash(){return Array.from(document.querySelectorAll('#scheduleView .event')).map(el=>[(el.querySelector('.time')||{}).textContent,(el.querySelector('.title')||{}).textContent,el.className,el.style.top,el.style.height].join('|')).join('~')+'::'+Array.from(document.querySelectorAll('#todoView input[type=checkbox]')).map(cb=>cb.checked?'1':'0').join('')}
+  function apply(force){injectCss();applyNav();placeCost();const h=domHash();if(force||h!==appliedHash){document.querySelectorAll('#scheduleView .day').forEach(normalizeDay);appliedHash=domHash();}hardProgressZeroFuture()}
   function schedule(force){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;apply(force)})}
+  function loadAssistant(){if(document.getElementById('aiChatButton'))return;const s=document.createElement('script');s.src='./assistant.js?v='+Date.now();s.async=false;document.head.appendChild(s)}
 
-  function loadAssistant(){
-    if(document.getElementById('aiChatButton'))return;
-    const s=document.createElement('script');
-    s.src='./assistant.js?v='+Date.now();
-    s.async=false;
-    document.head.appendChild(s);
-  }
-
-  cleanupInvalidTaskBlocks();
-  injectCss();
-  fetch(BASE_URL,{cache:'no-store'}).then(r=>r.text()).then(code=>{
-    (0,eval)(code);
-    loadAssistant();
-    cleanupInvalidTaskBlocks();
-    try{if(typeof render==='function')render()}catch(e){}
-    schedule(true);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},100);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},500);setTimeout(()=>{loadAssistant();placeCost()},1200);
-    const root=document.getElementById('scheduleView')||document.body;
-    new MutationObserver(()=>schedule(false)).observe(root,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']});
-    setInterval(()=>{loadAssistant();applyNav();placeCost();hardProgressZeroFuture()},300);
-  }).catch(()=>{loadAssistant();schedule(true);setInterval(()=>{loadAssistant();applyNav();placeCost();hardProgressZeroFuture()},300)});
+  cleanupInvalidTaskBlocks();injectCss();
+  fetch(BASE_URL,{cache:'no-store'}).then(r=>r.text()).then(code=>{(0,eval)(code);loadAssistant();cleanupInvalidTaskBlocks();try{if(typeof render==='function')render()}catch(e){}schedule(true);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},100);setTimeout(()=>{loadAssistant();schedule(true);placeCost()},500);setTimeout(()=>{loadAssistant();placeCost()},1200);const root=document.getElementById('scheduleView')||document.body;new MutationObserver(()=>schedule(false)).observe(root,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']});setInterval(()=>{loadAssistant();applyNav();placeCost();hardProgressZeroFuture()},300)}).catch(()=>{loadAssistant();schedule(true);setInterval(()=>{loadAssistant();applyNav();placeCost();hardProgressZeroFuture()},300)});
 })();
