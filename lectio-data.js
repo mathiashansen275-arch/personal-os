@@ -1,10 +1,10 @@
 // Loads the newest stable Personal OS layer, then applies stable no-overlap layout and locked AI task blocks.
-// UI patch version: newest-stable-v10
+// UI patch version: newest-stable-v11
 (function(){
   const BASE_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATE_KEY='personalOS.schedule.v5';
   const PX=1.22;
-  const GAP_PX=1;
+  const GAP_PX=5;
   let appliedHash='';
   let raf=0;
 
@@ -38,8 +38,8 @@
   }
 
   function injectCss(){
-    let s=document.getElementById('assistant-stable-v10-fixes');
-    if(!s){s=document.createElement('style');s.id='assistant-stable-v10-fixes';document.head.appendChild(s)}
+    let s=document.getElementById('assistant-stable-v11-fixes');
+    if(!s){s=document.createElement('style');s.id='assistant-stable-v11-fixes';document.head.appendChild(s)}
     s.textContent=`
       #addBlock{display:none!important}
       #revertWeek{display:none!important}
