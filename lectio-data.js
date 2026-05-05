@@ -1,14 +1,16 @@
-// Safe Personal OS patch layer for the Vercel app.
-// UI patch version: details-fix-v8
+// Loads the newest stable Personal OS layer, then connects the local DeepSeek assistant and safe UI fixes.
+// UI patch version: newest-stable-v1
 (function(){
+  const NEWEST_STABLE_URL='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/50bd59a53b151fd3deac3b2bbd34521945c4ce16/lectio-data.js';
   const STATS_KEY='personalOS.todoStats.v2';
   const PX=1.22;
+  let detailsLocked=false,left='',top='';
 
-  function injectCss(){
-    let s=document.getElementById('assistant-safe-fixes-v8');
+  function injectEarlyCss(){
+    let s=document.getElementById('assistant-safe-fixes-newest-stable');
     if(!s){
       s=document.createElement('style');
-      s.id='assistant-safe-fixes-v8';
+      s.id='assistant-safe-fixes-newest-stable';
       document.head.appendChild(s);
     }
     s.textContent=`
@@ -34,13 +36,13 @@
     document.head.appendChild(s);
   }
 
-  function tabId(){
-    const t=document.querySelector('.tab.active');
-    return t?t.getAttribute('data-tab'):'';
+  function activeTabId(){
+    const active=document.querySelector('.tab.active');
+    return active&&active.getAttribute('data-tab')||'';
   }
 
-  function applyNav(){
-    document.body.classList.toggle('aiScheduleActive',tabId()==='scheduleView');
+  function applyNavVisibility(){
+    document.body.classList.toggle('aiScheduleActive',activeTabId()==='scheduleView');
   }
 
   function parseTime(txt){
@@ -49,9 +51,7 @@
     return {start:Number(m[1])*60+Number(m[2]),end:Number(m[3])*60+Number(m[4]),raw:m[0]};
   }
 
-  function hm(x){
-    return String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0');
-  }
+  function hm(x){return String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0')}
 
   function textFits(node,text,reserve){
     if(!node||!text)return true;
@@ -93,9 +93,7 @@
     });
     const windEnds=rows.filter(r=>r.el.classList.contains('wind')).map(r=>r.t.end).sort((a,b)=>a-b);
     rows.forEach(r=>{
-      const el=r.el;
-      const time=el.querySelector('.time');
-      const title=el.querySelector('.title');
+      const el=r.el,time=el.querySelector('.time'),title=el.querySelector('.title');
       const shift=windEnds.filter(end=>end<=r.t.start).length*5;
       const start=r.t.start+shift;
       const end=r.t.end+shift+(el.classList.contains('wind')?5:0);
@@ -107,8 +105,8 @@
       const dur=end-start;
       el.classList.toggle('aiShortBlock',dur<=45);
       el.classList.toggle('aiTallBlock',dur>45);
-      if(time){time.style.textAlign='left';time.style.fontWeight='850';}
-      if(title){title.style.textAlign='left';title.style.fontWeight='800';}
+      if(time){time.style.textAlign='left';time.style.fontWeight='850'}
+      if(title){title.style.textAlign='left';title.style.fontWeight='800'}
       markDetails(el);
     });
   }
@@ -118,20 +116,20 @@
     document.querySelectorAll('#scheduleView .day').forEach(normalizeDay);
   }
 
-  function todayStart(){const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate());}
+  function todayStart(){const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate())}
   function purgeFutureStats(){
     let stats={};try{stats=JSON.parse(localStorage.getItem(STATS_KEY)||'{}')||{}}catch(e){}
     const today=todayStart();let changed=false;
-    Object.keys(stats).forEach(k=>{const d=new Date(k+'T00:00:00');if(d>today){delete stats[k];changed=true;}});
+    Object.keys(stats).forEach(k=>{const d=new Date(k+'T00:00:00');if(d>today){delete stats[k];changed=true}});
     if(changed)localStorage.setItem(STATS_KEY,JSON.stringify(stats));
   }
   function currentPct(){
     const rows=Array.from(document.querySelectorAll('#todoView tbody tr,#todoView .todoRow')).filter(r=>r.querySelector('input[type=checkbox]'));
-    const real=rows.filter(r=>{const i=r.querySelector('input[type=text],textarea,[contenteditable=true]');const txt=((i&&('value' in i?i.value:i.textContent))||'').trim().toLowerCase();return txt&&txt!=='new task';});
+    const real=rows.filter(r=>{const i=r.querySelector('input[type=text],textarea,[contenteditable=true]');const txt=((i&&('value' in i?i.value:i.textContent))||'').trim().toLowerCase();return txt&&txt!=='new task'});
     if(!real.length)return 0;
-    return Math.round(real.filter(r=>{const cb=r.querySelector('input[type=checkbox]');return cb&&cb.checked;}).length/real.length*100);
+    return Math.round(real.filter(r=>{const cb=r.querySelector('input[type=checkbox]');return cb&&cb.checked}).length/real.length*100);
   }
-  function todayName(){return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()];}
+  function todayName(){return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()]}
   function hardSetProgress(){
     purgeFutureStats();
     const side=document.querySelector('#todoView .todoSide');if(!side)return;
@@ -140,23 +138,22 @@
       const label=((card.querySelector('.todoDayTop span')||{}).textContent||card.textContent||'').trim();
       const isToday=/^Today/i.test(label)||new RegExp('^'+name+'\\b','i').test(label);
       const p=isToday?pct:0;
-      const top=card.querySelector('.todoDayTop'),fill=card.querySelector('.todoBarFill');
-      if(top){const spans=top.querySelectorAll('span');if(spans[1])spans[1].textContent=p+'%';}
+      const topEl=card.querySelector('.todoDayTop'),fill=card.querySelector('.todoBarFill');
+      if(topEl){const spans=topEl.querySelectorAll('span');if(spans[1])spans[1].textContent=p+'%'}
       if(fill)fill.style.width=p+'%';
     });
   }
 
-  let locked=false,left='',top='';
   function lockDetail(){
     const box=document.getElementById('aiDetailFloat');if(!box)return;
-    if(!left||!top){const r=box.getBoundingClientRect();left=Math.round(r.left)+'px';top=Math.round(r.top)+'px';}
-    box.style.position='fixed';box.style.left=left;box.style.top=top;locked=true;
+    if(!left||!top){const r=box.getBoundingClientRect();left=Math.round(r.left)+'px';top=Math.round(r.top)+'px'}
+    box.style.position='fixed';box.style.left=left;box.style.top=top;detailsLocked=true;
   }
-  function restoreDetail(){const box=document.getElementById('aiDetailFloat');if(box&&locked){box.style.position='fixed';box.style.left=left;box.style.top=top;}}
+  function restoreDetail(){const box=document.getElementById('aiDetailFloat');if(box&&detailsLocked){box.style.position='fixed';box.style.left=left;box.style.top=top}}
 
-  function apply(){injectCss();applyNav();normalizeSchedule();hardSetProgress();restoreDetail();}
+  function applySafeFixes(){injectEarlyCss();applyNavVisibility();normalizeSchedule();hardSetProgress();restoreDetail()}
 
-  function loadAssistant(){
+  function loadLocalAssistant(){
     if(document.getElementById('aiChatButton'))return;
     const s=document.createElement('script');
     s.src='./assistant.js?v='+Date.now();
@@ -165,24 +162,28 @@
   }
 
   purgeFutureStats();
-  injectCss();
+  injectEarlyCss();
   document.addEventListener('click',function(e){
-    if(e.target.closest&&e.target.closest('.tab'))setTimeout(apply,0);
-    if(e.target.closest&&e.target.closest('.aiDetailShow')){locked=false;left='';top='';setTimeout(lockDetail,0);setTimeout(lockDetail,80);}
+    if(e.target.closest&&e.target.closest('.tab'))setTimeout(applySafeFixes,0);
+    if(e.target.closest&&e.target.closest('.aiDetailShow')){detailsLocked=false;left='';top='';setTimeout(lockDetail,0);setTimeout(lockDetail,80)}
     setTimeout(hardSetProgress,0);setTimeout(hardSetProgress,150);
   },true);
   document.addEventListener('change',function(){setTimeout(hardSetProgress,0);setTimeout(hardSetProgress,150)},true);
   window.addEventListener('scroll',restoreDetail,true);
-  window.addEventListener('resize',function(){locked=false;left='';top='';apply();});
+  window.addEventListener('resize',function(){detailsLocked=false;left='';top='';applySafeFixes()});
 
-  function boot(){
-    loadAssistant();
-    apply();
-    setTimeout(apply,100);
-    setTimeout(apply,400);
-    setTimeout(apply,1000);
-    setInterval(function(){applyNav();hardSetProgress();restoreDetail();},350);
-    setInterval(apply,2000);
+  function bootAfterNewestLayer(){
+    loadLocalAssistant();
+    applySafeFixes();
+    setTimeout(applySafeFixes,100);
+    setTimeout(applySafeFixes,400);
+    setTimeout(applySafeFixes,1000);
+    setInterval(function(){applyNavVisibility();hardSetProgress();restoreDetail()},350);
+    setInterval(applySafeFixes,2000);
   }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+
+  fetch(NEWEST_STABLE_URL,{cache:'no-store'})
+    .then(r=>r.text())
+    .then(code=>{(0,eval)(code);bootAfterNewestLayer()})
+    .catch(()=>{loadLocalAssistant();bootAfterNewestLayer()});
 })();
