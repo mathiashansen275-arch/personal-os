@@ -28,6 +28,20 @@
     try{ if(typeof renderTasks === 'function') renderTasks(); }catch(e){}
     try{ if(typeof renderProductivity === 'function') renderProductivity(); }catch(e){}
   }
+  function applyRemoteValue(key, value){
+    applyingRemote = true;
+    try{
+      originalSetItem(key, JSON.stringify(value));
+      if(key === 'personalOS.tasks.v1' && Array.isArray(value)){
+        try{ window.tasks = value; }catch(e){}
+        try{ tasks = value; }catch(e){}
+      }
+      if(key === 'personalOS.schedule.v5' && value && typeof value === 'object'){
+        try{ window.state = value; }catch(e){}
+        try{ state = value; }catch(e){}
+      }
+    }finally{ applyingRemote = false; }
+  }
   function toastMsg(msg){
     try{ if(typeof toast === 'function'){ toast(msg); return; } }catch(e){}
     let el=document.getElementById('posCloudToast');
@@ -99,9 +113,7 @@
       .maybeSingle();
     if(error) throw error;
     if(!data || data.value == null) return false;
-    applyingRemote = true;
-    try{ originalSetItem(key, JSON.stringify(data.value)); }
-    finally{ applyingRemote = false; }
+    applyRemoteValue(key, data.value);
     return true;
   }
 
@@ -144,8 +156,12 @@
       for(const key of SYNC_KEYS){
         if(await pullKey(key)) downloaded++;
       }
-      rerender();
-      toastMsg(downloaded ? 'Downloaded '+downloaded+' cloud keys' : 'No cloud data found to download');
+      if(downloaded){
+        toastMsg('Downloaded '+downloaded+' cloud keys. Reloading...');
+        hardReload();
+      }else{
+        toastMsg('No cloud data found to download');
+      }
     }catch(e){
       console.error('Personal OS cloud download failed', e);
       toastMsg('Download failed: '+(e && e.message ? e.message : 'check console'));
@@ -154,9 +170,7 @@
 
   async function initialSync(){
     for(const key of SYNC_KEYS){
-      const localExists = localStorage.getItem(key) != null;
-      const hadRemote = await pullKey(key);
-      if(!hadRemote && localExists) await pushKey(key);
+      if(localStorage.getItem(key) == null) await pullKey(key);
     }
     rerender();
   }
@@ -236,9 +250,7 @@
       }, payload => {
         const row = payload.new;
         if(!row || !isSyncKey(row.key)) return;
-        applyingRemote = true;
-        try{ originalSetItem(row.key, JSON.stringify(row.value)); }
-        finally{ applyingRemote = false; }
+        applyRemoteValue(row.key, row.value);
         rerender();
       })
       .subscribe();
