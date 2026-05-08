@@ -15,6 +15,8 @@
   let userId = null;
   let applyingRemote = false;
   let syncing = false;
+  let polling = false;
+  const remoteUpdatedAt = {};
 
   function isSyncKey(key){ return SYNC_KEYS.includes(String(key)); }
   function sessionExpired(){
@@ -104,7 +106,7 @@
     };
   }
 
-  async function pullKey(key){
+  async function pullKey(key, force){
     const {data,error} = await client
       .from('user_kv')
       .select('value,updated_at')
@@ -113,6 +115,8 @@
       .maybeSingle();
     if(error) throw error;
     if(!data || data.value == null) return false;
+    if(!force && data.updated_at && remoteUpdatedAt[key] === data.updated_at) return false;
+    remoteUpdatedAt[key] = data.updated_at || String(Date.now());
     applyRemoteValue(key, data.value);
     return true;
   }
@@ -121,13 +125,15 @@
     if(!client || !userId || !isSyncKey(key) || applyingRemote) return false;
     let parsed = null;
     try{ parsed = JSON.parse(localStorage.getItem(key) || 'null'); }catch(e){ throw e; }
+    const updatedAt = new Date().toISOString();
     const {error} = await client.from('user_kv').upsert({
       user_id: userId,
       key,
       value: parsed,
-      updated_at: new Date().toISOString()
+      updated_at: updatedAt
     }, {onConflict:'user_id,key'});
     if(error) throw error;
+    remoteUpdatedAt[key] = updatedAt;
     return true;
   }
 
@@ -154,7 +160,7 @@
     try{
       let downloaded = 0;
       for(const key of SYNC_KEYS){
-        if(await pullKey(key)) downloaded++;
+        if(await pullKey(key, true)) downloaded++;
       }
       if(downloaded){
         toastMsg('Downloaded '+downloaded+' cloud keys. Reloading...');
@@ -168,9 +174,24 @@
     }finally{ syncing = false; }
   }
 
+  async function pollRemote(){
+    if(!client || !userId || syncing || polling) return;
+    polling = true;
+    try{
+      let changed = 0;
+      for(const key of SYNC_KEYS){
+        if(await pullKey(key, false)) changed++;
+      }
+      if(changed) rerender();
+    }catch(e){
+      console.error('Personal OS cloud polling failed', e);
+    }finally{ polling = false; }
+  }
+
   async function initialSync(){
     for(const key of SYNC_KEYS){
-      if(localStorage.getItem(key) == null) await pullKey(key);
+      if(localStorage.getItem(key) == null) await pullKey(key, true);
+      else await pullKey(key, false);
     }
     rerender();
   }
@@ -250,6 +271,7 @@
       }, payload => {
         const row = payload.new;
         if(!row || !isSyncKey(row.key)) return;
+        remoteUpdatedAt[row.key] = row.updated_at || String(Date.now());
         applyRemoteValue(row.key, row.value);
         rerender();
       })
@@ -263,7 +285,7 @@
     client = supabaseLib.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
     });
-    window.personalOSCloud = {client, syncKeys: SYNC_KEYS, pushAllLocal, pullAllRemote};
+    window.personalOSCloud = {client, syncKeys: SYNC_KEYS, pushAllLocal, pullAllRemote, pollRemote};
 
     const {data:{session}} = await client.auth.getSession();
     if(!session || sessionExpired()){
@@ -283,6 +305,7 @@
     subscribeRealtime();
     installCloudControls();
     setInterval(installCloudControls, 1200);
+    setInterval(pollRemote, 3500);
   }
 
   init().catch(e=>console.error('Personal OS cloud init failed', e));
