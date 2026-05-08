@@ -155,23 +155,56 @@
 
   function installCloudControls(){
     if(document.getElementById('posCloudUpload')) return;
-    const nav=document.querySelector('.nav') || document.querySelector('.topbar') || document.body;
+
+    const wrap=document.createElement('div');
+    wrap.id='posCloudControls';
+    wrap.style.cssText=[
+      'position:fixed',
+      'right:18px',
+      'top:82px',
+      'z-index:1000000',
+      'display:flex',
+      'gap:8px',
+      'pointer-events:auto'
+    ].join(';');
+
+    function absorb(e){
+      e.preventDefault();
+      e.stopPropagation();
+      if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+    }
+    function runCloudAction(action){
+      return function(e){
+        absorb(e);
+        action();
+      };
+    }
+    function protectButton(btn, action){
+      btn.addEventListener('pointerdown', absorb, true);
+      btn.addEventListener('touchstart', absorb, true);
+      btn.addEventListener('mousedown', absorb, true);
+      btn.addEventListener('click', runCloudAction(action), true);
+    }
+
     const up=document.createElement('button');
     up.id='posCloudUpload';
     up.type='button';
     up.textContent='UPLOAD THIS DEVICE';
     up.title='Make this device the cloud source of truth';
-    up.style.cssText='height:40px;border-radius:10px;border:1px solid #136b51;background:rgba(16,194,119,.08);color:#bfffdc;font-weight:1000;font-size:12px;padding:0 12px;letter-spacing:.06em';
-    up.onclick=e=>{e.preventDefault();e.stopPropagation();pushAllLocal();};
+    up.style.cssText='height:40px;border-radius:10px;border:1px solid #136b51;background:#062015;color:#bfffdc;font-weight:1000;font-size:12px;padding:0 12px;letter-spacing:.06em;pointer-events:auto;cursor:pointer;touch-action:manipulation;';
+    protectButton(up, pushAllLocal);
+
     const down=document.createElement('button');
     down.id='posCloudDownload';
     down.type='button';
     down.textContent='DOWNLOAD CLOUD';
     down.title='Replace this device with cloud data';
-    down.style.cssText='height:40px;border-radius:10px;border:1px solid #49306c;background:#090812;color:#fff;font-weight:1000;font-size:12px;padding:0 12px;letter-spacing:.06em';
-    down.onclick=e=>{e.preventDefault();e.stopPropagation();pullAllRemote();};
-    nav.insertBefore(down, nav.firstChild);
-    nav.insertBefore(up, nav.firstChild);
+    down.style.cssText='height:40px;border-radius:10px;border:1px solid #49306c;background:#090812;color:#fff;font-weight:1000;font-size:12px;padding:0 12px;letter-spacing:.06em;pointer-events:auto;cursor:pointer;touch-action:manipulation;';
+    protectButton(down, pullAllRemote);
+
+    wrap.appendChild(up);
+    wrap.appendChild(down);
+    document.body.appendChild(wrap);
   }
 
   function subscribeRealtime(){
