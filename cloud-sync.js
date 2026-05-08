@@ -183,8 +183,9 @@
     try{
       captureVisibleTasks();
       const serialized = JSON.stringify(arr);
-      if(serialized === localStorage.getItem('personalOS.tasks.v1')) return false;
-      originalSetItem('personalOS.tasks.v1', serialized);
+      if(serialized !== localStorage.getItem('personalOS.tasks.v1')){
+        originalSetItem('personalOS.tasks.v1', serialized);
+      }
       lastLocalWriteAt = Date.now();
       await pushKey('personalOS.tasks.v1');
       return true;
@@ -256,9 +257,10 @@
   }
 
   async function initialSync(){
+    await flushTasksToCloud();
     for(const key of SYNC_KEYS){
       if(localStorage.getItem(key) == null) await pullKey(key, true);
-      else await pullKey(key, false);
+      else await pushKey(key);
     }
     rerender();
   }
