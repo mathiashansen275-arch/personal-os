@@ -16,6 +16,7 @@
   let applyingRemote = false;
   let syncing = false;
   let polling = false;
+  let lastLocalWriteAt = 0;
   const remoteUpdatedAt = {};
 
   function isSyncKey(key){ return SYNC_KEYS.includes(String(key)); }
@@ -115,6 +116,12 @@
       .maybeSingle();
     if(error) throw error;
     if(!data || data.value == null) return false;
+    const remoteValue = JSON.stringify(data.value);
+    const localValue = localStorage.getItem(key);
+    if(remoteValue === localValue){
+      remoteUpdatedAt[key] = data.updated_at || remoteUpdatedAt[key] || String(Date.now());
+      return false;
+    }
     if(!force && data.updated_at && remoteUpdatedAt[key] === data.updated_at) return false;
     remoteUpdatedAt[key] = data.updated_at || String(Date.now());
     applyRemoteValue(key, data.value);
@@ -126,14 +133,14 @@
     let parsed = null;
     try{ parsed = JSON.parse(localStorage.getItem(key) || 'null'); }catch(e){ throw e; }
     const updatedAt = new Date().toISOString();
-    const {error} = await client.from('user_kv').upsert({
+    const {data,error} = await client.from('user_kv').upsert({
       user_id: userId,
       key,
       value: parsed,
       updated_at: updatedAt
-    }, {onConflict:'user_id,key'});
+    }, {onConflict:'user_id,key'}).select('updated_at').maybeSingle();
     if(error) throw error;
-    remoteUpdatedAt[key] = updatedAt;
+    remoteUpdatedAt[key] = (data && data.updated_at) || updatedAt;
     return true;
   }
 
@@ -175,7 +182,7 @@
   }
 
   async function pollRemote(){
-    if(!client || !userId || syncing || polling) return;
+    if(!client || !userId || syncing || polling || Date.now() - lastLocalWriteAt < 9000) return;
     polling = true;
     try{
       let changed = 0;
@@ -199,7 +206,10 @@
   function patchLocalStorageWrites(){
     localStorage.setItem = function(key, value){
       originalSetItem(key, value);
-      if(isSyncKey(key)) pushKey(key).catch(e=>console.error('Personal OS cloud auto-sync failed', e));
+      if(isSyncKey(key)){
+        if(!applyingRemote) lastLocalWriteAt = Date.now();
+        pushKey(key).catch(e=>console.error('Personal OS cloud auto-sync failed', e));
+      }
     };
   }
 
@@ -271,6 +281,11 @@
       }, payload => {
         const row = payload.new;
         if(!row || !isSyncKey(row.key)) return;
+        const remoteValue = JSON.stringify(row.value);
+        if(remoteValue === localStorage.getItem(row.key)){
+          remoteUpdatedAt[row.key] = row.updated_at || remoteUpdatedAt[row.key] || String(Date.now());
+          return;
+        }
         remoteUpdatedAt[row.key] = row.updated_at || String(Date.now());
         applyRemoteValue(row.key, row.value);
         rerender();
