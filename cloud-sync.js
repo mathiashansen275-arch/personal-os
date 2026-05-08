@@ -1,28 +1,39 @@
-// Personal OS cloud sync scaffold for Supabase auth + shared storage.
-// This file is intentionally isolated. Existing app behavior is unchanged until index.html loads it
-// and Vercel/Supabase environment values are configured.
+// Personal OS cloud sync: Supabase email/password auth + shared localStorage keys.
+// Loads only when /api/config has SUPABASE_URL and SUPABASE_ANON_KEY configured.
 (function(){
   const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-  const STORAGE_PREFIX = 'personalOS.';
-  const SESSION_KEY = STORAGE_PREFIX + 'cloudSessionStartedAt.v1';
+  const SESSION_KEY = 'personalOS.cloudSessionStartedAt.v1';
+  const SYNC_KEYS = [
+    'personalOS.tasks.v1',
+    'personalOS.schedule.v5',
+    'personalOS.productivity.v1',
+    'personalOS.todoStats.v2',
+    'personalOS.lastCompletedTaskCleanupDate.v1'
+  ];
+  const originalSetItem = localStorage.setItem.bind(localStorage);
+  let client = null;
+  let userId = null;
+  let applyingRemote = false;
 
-  function env(name){
-    if(window.PERSONAL_OS_CONFIG && window.PERSONAL_OS_CONFIG[name]) return window.PERSONAL_OS_CONFIG[name];
-    return '';
+  function isSyncKey(key){ return SYNC_KEYS.includes(String(key)); }
+  function sessionExpired(){
+    const started = Number(localStorage.getItem(SESSION_KEY) || 0);
+    return !started || Date.now() - started > SESSION_MAX_AGE_MS;
   }
+  function markSession(){ originalSetItem(SESSION_KEY, String(Date.now())); }
+  function hardReload(){ setTimeout(()=>location.reload(), 80); }
 
-  function isExpired(){
-    const raw = Number(localStorage.getItem(SESSION_KEY) || 0);
-    return !raw || Date.now() - raw > SESSION_MAX_AGE_MS;
-  }
-
-  function markSession(){
-    localStorage.setItem(SESSION_KEY, String(Date.now()));
+  async function getConfig(){
+    try{
+      const r = await fetch('/api/config', {cache:'no-store'});
+      if(!r.ok) return {};
+      return await r.json();
+    }catch(e){ return {}; }
   }
 
   async function loadSupabase(){
     if(window.supabase) return window.supabase;
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve,reject)=>{
       const s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
       s.onload = resolve;
@@ -32,11 +43,11 @@
     return window.supabase;
   }
 
-  function showLogin(client, allowedEmail){
+  function showLogin(allowedEmail){
     document.body.innerHTML = '';
     const wrap = document.createElement('div');
     wrap.style.cssText = 'min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font-family:Inter,system-ui,sans-serif;padding:24px;';
-    wrap.innerHTML = '<form id="posLogin" style="width:min(420px,100%);border:1px solid #49306c;border-radius:18px;background:#070710;padding:22px;display:flex;flex-direction:column;gap:12px;"><h1 style="margin:0 0 6px;font-size:26px;">Personal OS</h1><p style="margin:0 0 8px;color:#b8a7dc;line-height:1.35;">Log in to sync your private OS across devices.</p><input id="posEmail" type="email" placeholder="Email" autocomplete="email" required style="height:44px;border-radius:10px;border:1px solid #352456;background:#090812;color:#fff;padding:0 12px;font-weight:800;"><input id="posPassword" type="password" placeholder="Password" autocomplete="current-password" required style="height:44px;border-radius:10px;border:1px solid #352456;background:#090812;color:#fff;padding:0 12px;font-weight:800;"><button style="height:46px;border-radius:11px;border:1px solid #7f52ff;background:#482096;color:#fff;font-weight:1000;cursor:pointer;">LOG IN</button><div id="posLoginMsg" style="min-height:20px;color:#ff8f9a;font-size:13px;"></div></form>';
+    wrap.innerHTML = '<form id="posLogin" style="width:min(420px,100%);border:1px solid #49306c;border-radius:18px;background:#070710;padding:22px;display:flex;flex-direction:column;gap:12px;box-shadow:0 0 60px rgba(155,108,255,.18)"><h1 style="margin:0 0 6px;font-size:26px;">Personal OS</h1><p style="margin:0 0 8px;color:#b8a7dc;line-height:1.35;">Log in to sync your private OS across devices. You will stay signed in for 30 days.</p><input id="posEmail" type="email" placeholder="Email" autocomplete="email" required style="height:44px;border-radius:10px;border:1px solid #352456;background:#090812;color:#fff;padding:0 12px;font-weight:800;"><input id="posPassword" type="password" placeholder="Password" autocomplete="current-password" required style="height:44px;border-radius:10px;border:1px solid #352456;background:#090812;color:#fff;padding:0 12px;font-weight:800;"><button style="height:46px;border-radius:11px;border:1px solid #7f52ff;background:#482096;color:#fff;font-weight:1000;cursor:pointer;">LOG IN</button><div id="posLoginMsg" style="min-height:20px;color:#ff8f9a;font-size:13px;"></div></form>';
     document.body.appendChild(wrap);
     document.getElementById('posLogin').onsubmit = async e => {
       e.preventDefault();
@@ -48,32 +59,106 @@
         return;
       }
       msg.textContent = 'Logging in...';
-      const {error} = await client.auth.signInWithPassword({email,password});
+      const {data,error} = await client.auth.signInWithPassword({email,password});
       if(error){ msg.textContent = error.message; return; }
+      if(allowedEmail && data.user && data.user.email && data.user.email.toLowerCase() !== allowedEmail.toLowerCase()){
+        await client.auth.signOut();
+        msg.textContent = 'This email is not allowed.';
+        return;
+      }
       markSession();
-      location.reload();
+      hardReload();
     };
   }
 
-  async function init(){
-    const url = env('SUPABASE_URL');
-    const anon = env('SUPABASE_ANON_KEY');
-    const allowedEmail = env('ALLOWED_EMAIL');
-    if(!url || !anon) return;
+  async function pullKey(key){
+    const {data,error} = await client
+      .from('user_kv')
+      .select('value,updated_at')
+      .eq('user_id', userId)
+      .eq('key', key)
+      .maybeSingle();
+    if(error || !data || data.value == null) return false;
+    applyingRemote = true;
+    try{ originalSetItem(key, JSON.stringify(data.value)); }
+    finally{ applyingRemote = false; }
+    return true;
+  }
 
+  async function pushKey(key){
+    if(!client || !userId || !isSyncKey(key) || applyingRemote) return;
+    let parsed = null;
+    try{ parsed = JSON.parse(localStorage.getItem(key) || 'null'); }catch(e){ return; }
+    await client.from('user_kv').upsert({
+      user_id: userId,
+      key,
+      value: parsed,
+      updated_at: new Date().toISOString()
+    }, {onConflict:'user_id,key'});
+  }
+
+  async function initialSync(){
+    for(const key of SYNC_KEYS){
+      const hadRemote = await pullKey(key);
+      if(!hadRemote && localStorage.getItem(key) != null) await pushKey(key);
+    }
+    try{ if(typeof render === 'function') render(); }catch(e){}
+    try{ if(typeof renderTasks === 'function') renderTasks(); }catch(e){}
+    try{ if(typeof renderProductivity === 'function') renderProductivity(); }catch(e){}
+  }
+
+  function patchLocalStorageWrites(){
+    localStorage.setItem = function(key, value){
+      originalSetItem(key, value);
+      if(isSyncKey(key)) pushKey(key);
+    };
+  }
+
+  function subscribeRealtime(){
+    client.channel('personal-os-user-kv-'+userId)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'user_kv',
+        filter: 'user_id=eq.'+userId
+      }, payload => {
+        const row = payload.new;
+        if(!row || !isSyncKey(row.key)) return;
+        applyingRemote = true;
+        try{ originalSetItem(row.key, JSON.stringify(row.value)); }
+        finally{ applyingRemote = false; }
+        try{ if(typeof render === 'function') render(); }catch(e){}
+        try{ if(typeof renderTasks === 'function') renderTasks(); }catch(e){}
+        try{ if(typeof renderProductivity === 'function') renderProductivity(); }catch(e){}
+      })
+      .subscribe();
+  }
+
+  async function init(){
+    const config = await getConfig();
+    if(!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY) return;
     const supabaseLib = await loadSupabase();
-    const client = supabaseLib.createClient(url, anon, {
+    client = supabaseLib.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
     });
-    window.personalOSCloud = { client };
+    window.personalOSCloud = {client, syncKeys: SYNC_KEYS};
 
     const {data:{session}} = await client.auth.getSession();
-    if(!session || isExpired()){
+    if(!session || sessionExpired()){
       if(session) await client.auth.signOut();
-      showLogin(client, allowedEmail);
+      showLogin(config.ALLOWED_EMAIL || '');
+      return;
+    }
+    userId = session.user.id;
+    if(config.ALLOWED_EMAIL && session.user.email && session.user.email.toLowerCase() !== config.ALLOWED_EMAIL.toLowerCase()){
+      await client.auth.signOut();
+      showLogin(config.ALLOWED_EMAIL);
       return;
     }
     markSession();
+    patchLocalStorageWrites();
+    await initialSync();
+    subscribeRealtime();
   }
 
   init().catch(()=>{});
