@@ -16,7 +16,9 @@
   let applyingRemote = false;
   let syncing = false;
   let polling = false;
+  let flushingTasks = false;
   let lastLocalWriteAt = 0;
+  let taskFlushTimer = 0;
   const remoteUpdatedAt = {};
 
   function isSyncKey(key){ return SYNC_KEYS.includes(String(key)); }
@@ -30,6 +32,11 @@
     try{ if(typeof render === 'function') render(); }catch(e){}
     try{ if(typeof renderTasks === 'function') renderTasks(); }catch(e){}
     try{ if(typeof renderProductivity === 'function') renderProductivity(); }catch(e){}
+  }
+  function liveTasks(){
+    try{ if(Array.isArray(tasks)) return tasks; }catch(e){}
+    try{ if(Array.isArray(window.tasks)) return window.tasks; }catch(e){}
+    return null;
   }
   function applyRemoteValue(key, value){
     applyingRemote = true;
@@ -144,11 +151,63 @@
     return true;
   }
 
+  function captureVisibleTasks(){
+    const arr = liveTasks();
+    if(!Array.isArray(arr)) return false;
+    let changed = false;
+    document.querySelectorAll('#todoView .todoRow').forEach(row=>{
+      const id = row.dataset && row.dataset.id;
+      if(!id) return;
+      const task = arr.find(t=>t && t.id === id);
+      if(!task) return;
+      const textEl = row.querySelector('.taskPill,.taskTextInput');
+      const checkEl = row.querySelector('.taskCheck');
+      const dayEl = row.querySelector('.cellSelect');
+      if(textEl && task.text !== textEl.value){ task.text = textEl.value; changed = true; }
+      if(checkEl && !!task.done !== !!checkEl.checked){
+        task.done = !!checkEl.checked;
+        if(task.done && !task.completedAt) task.completedAt = new Date().toISOString();
+        if(!task.done && task.completedAt) delete task.completedAt;
+        changed = true;
+      }
+      if(dayEl && task.day !== dayEl.value){ task.day = dayEl.value; changed = true; }
+    });
+    return changed;
+  }
+
+  async function flushTasksToCloud(){
+    if(applyingRemote || flushingTasks) return false;
+    const arr = liveTasks();
+    if(!Array.isArray(arr)) return false;
+    flushingTasks = true;
+    try{
+      captureVisibleTasks();
+      const serialized = JSON.stringify(arr);
+      if(serialized === localStorage.getItem('personalOS.tasks.v1')) return false;
+      originalSetItem('personalOS.tasks.v1', serialized);
+      lastLocalWriteAt = Date.now();
+      await pushKey('personalOS.tasks.v1');
+      return true;
+    }catch(e){
+      console.error('Personal OS task flush failed', e);
+      return false;
+    }finally{
+      flushingTasks = false;
+    }
+  }
+
+  function scheduleTaskFlush(){
+    lastLocalWriteAt = Date.now();
+    clearTimeout(taskFlushTimer);
+    taskFlushTimer = setTimeout(flushTasksToCloud, 450);
+  }
+
   async function pushAllLocal(){
     if(!client || !userId){ toastMsg('Cloud sync is not ready yet'); return; }
     if(syncing){ toastMsg('Cloud sync is already running'); return; }
     syncing = true;
     try{
+      await flushTasksToCloud();
       let uploaded = 0;
       for(const key of SYNC_KEYS){
         if(localStorage.getItem(key) != null && await pushKey(key)) uploaded++;
@@ -182,6 +241,7 @@
   }
 
   async function pollRemote(){
+    await flushTasksToCloud();
     if(!client || !userId || syncing || polling || Date.now() - lastLocalWriteAt < 9000) return;
     polling = true;
     try{
@@ -211,6 +271,21 @@
         pushKey(key).catch(e=>console.error('Personal OS cloud auto-sync failed', e));
       }
     };
+  }
+
+  function installTaskFlushHandlers(){
+    document.addEventListener('input', e=>{
+      if(e.target && e.target.closest && e.target.closest('#todoView .taskPill,#todoView .taskTextInput')) scheduleTaskFlush();
+    }, true);
+    document.addEventListener('change', e=>{
+      if(e.target && e.target.closest && e.target.closest('#todoView .taskCheck,#todoView .cellSelect,#todoView .taskPill,#todoView .taskTextInput')) scheduleTaskFlush();
+    }, true);
+    document.addEventListener('click', e=>{
+      if(e.target && e.target.closest && e.target.closest('#addTask,#todoView .danger')) setTimeout(scheduleTaskFlush, 80);
+    }, true);
+    window.addEventListener('pagehide', ()=>{ captureVisibleTasks(); const arr = liveTasks(); if(Array.isArray(arr)) originalSetItem('personalOS.tasks.v1', JSON.stringify(arr)); }, true);
+    document.addEventListener('visibilitychange', ()=>{ if(document.hidden) flushTasksToCloud(); }, true);
+    setInterval(flushTasksToCloud, 2500);
   }
 
   function installCloudControls(){
@@ -300,7 +375,7 @@
     client = supabaseLib.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
     });
-    window.personalOSCloud = {client, syncKeys: SYNC_KEYS, pushAllLocal, pullAllRemote, pollRemote};
+    window.personalOSCloud = {client, syncKeys: SYNC_KEYS, pushAllLocal, pullAllRemote, pollRemote, flushTasksToCloud};
 
     const {data:{session}} = await client.auth.getSession();
     if(!session || sessionExpired()){
@@ -316,6 +391,7 @@
     }
     markSession();
     patchLocalStorageWrites();
+    installTaskFlushHandlers();
     await initialSync();
     subscribeRealtime();
     installCloudControls();
