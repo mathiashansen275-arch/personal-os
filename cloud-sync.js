@@ -14,6 +14,7 @@
   let client = null;
   let userId = null;
   let applyingRemote = false;
+  let syncing = false;
 
   function isSyncKey(key){ return SYNC_KEYS.includes(String(key)); }
   function sessionExpired(){
@@ -22,6 +23,24 @@
   }
   function markSession(){ originalSetItem(SESSION_KEY, String(Date.now())); }
   function hardReload(){ setTimeout(()=>location.reload(), 80); }
+  function rerender(){
+    try{ if(typeof render === 'function') render(); }catch(e){}
+    try{ if(typeof renderTasks === 'function') renderTasks(); }catch(e){}
+    try{ if(typeof renderProductivity === 'function') renderProductivity(); }catch(e){}
+  }
+  function toastMsg(msg){
+    try{ if(typeof toast === 'function'){ toast(msg); return; } }catch(e){}
+    let el=document.getElementById('posCloudToast');
+    if(!el){
+      el=document.createElement('div');
+      el.id='posCloudToast';
+      el.style.cssText='position:fixed;right:18px;bottom:18px;z-index:100000;background:#090812;color:#fff;border:1px solid #7f52ff;border-radius:12px;padding:12px 14px;font-weight:900;box-shadow:0 12px 34px rgba(0,0,0,.55)';
+      document.body.appendChild(el);
+    }
+    el.textContent=msg;
+    clearTimeout(el._t);
+    el._t=setTimeout(()=>el.remove(),2600);
+  }
 
   async function getConfig(){
     try{
@@ -97,14 +116,34 @@
     }, {onConflict:'user_id,key'});
   }
 
+  async function pushAllLocal(){
+    if(!client || !userId || syncing) return;
+    syncing = true;
+    try{
+      for(const key of SYNC_KEYS){
+        if(localStorage.getItem(key) != null) await pushKey(key);
+      }
+      toastMsg('Uploaded this device to cloud');
+    }finally{ syncing = false; }
+  }
+
+  async function pullAllRemote(){
+    if(!client || !userId || syncing) return;
+    syncing = true;
+    try{
+      for(const key of SYNC_KEYS) await pullKey(key);
+      rerender();
+      toastMsg('Downloaded cloud data');
+    }finally{ syncing = false; }
+  }
+
   async function initialSync(){
     for(const key of SYNC_KEYS){
+      const localExists = localStorage.getItem(key) != null;
       const hadRemote = await pullKey(key);
-      if(!hadRemote && localStorage.getItem(key) != null) await pushKey(key);
+      if(!hadRemote && localExists) await pushKey(key);
     }
-    try{ if(typeof render === 'function') render(); }catch(e){}
-    try{ if(typeof renderTasks === 'function') renderTasks(); }catch(e){}
-    try{ if(typeof renderProductivity === 'function') renderProductivity(); }catch(e){}
+    rerender();
   }
 
   function patchLocalStorageWrites(){
@@ -112,6 +151,27 @@
       originalSetItem(key, value);
       if(isSyncKey(key)) pushKey(key);
     };
+  }
+
+  function installCloudControls(){
+    if(document.getElementById('posCloudUpload')) return;
+    const nav=document.querySelector('.nav') || document.querySelector('.topbar') || document.body;
+    const up=document.createElement('button');
+    up.id='posCloudUpload';
+    up.type='button';
+    up.textContent='UPLOAD THIS DEVICE';
+    up.title='Make this device the cloud source of truth';
+    up.style.cssText='height:40px;border-radius:10px;border:1px solid #136b51;background:rgba(16,194,119,.08);color:#bfffdc;font-weight:1000;font-size:12px;padding:0 12px;letter-spacing:.06em';
+    up.onclick=e=>{e.preventDefault();e.stopPropagation();pushAllLocal();};
+    const down=document.createElement('button');
+    down.id='posCloudDownload';
+    down.type='button';
+    down.textContent='DOWNLOAD CLOUD';
+    down.title='Replace this device with cloud data';
+    down.style.cssText='height:40px;border-radius:10px;border:1px solid #49306c;background:#090812;color:#fff;font-weight:1000;font-size:12px;padding:0 12px;letter-spacing:.06em';
+    down.onclick=e=>{e.preventDefault();e.stopPropagation();pullAllRemote();};
+    nav.insertBefore(down, nav.firstChild);
+    nav.insertBefore(up, nav.firstChild);
   }
 
   function subscribeRealtime(){
@@ -127,9 +187,7 @@
         applyingRemote = true;
         try{ originalSetItem(row.key, JSON.stringify(row.value)); }
         finally{ applyingRemote = false; }
-        try{ if(typeof render === 'function') render(); }catch(e){}
-        try{ if(typeof renderTasks === 'function') renderTasks(); }catch(e){}
-        try{ if(typeof renderProductivity === 'function') renderProductivity(); }catch(e){}
+        rerender();
       })
       .subscribe();
   }
@@ -141,7 +199,7 @@
     client = supabaseLib.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
     });
-    window.personalOSCloud = {client, syncKeys: SYNC_KEYS};
+    window.personalOSCloud = {client, syncKeys: SYNC_KEYS, pushAllLocal, pullAllRemote};
 
     const {data:{session}} = await client.auth.getSession();
     if(!session || sessionExpired()){
@@ -159,6 +217,8 @@
     patchLocalStorageWrites();
     await initialSync();
     subscribeRealtime();
+    installCloudControls();
+    setInterval(installCloudControls, 1200);
   }
 
   init().catch(()=>{});
