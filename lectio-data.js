@@ -1,4 +1,4 @@
-// Personal OS loader: preserve existing OS behavior, then enable cloud auth/sync.
+// Personal OS loader: preserve current OS wrapper, then enable cloud auth/sync.
 (function(){
   const EXISTING_OS='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/1a85bacfe9fe3a4eb654ecc05df1adb61e0c58c9/lectio-data.js';
   function loadScript(src,id){
@@ -12,8 +12,16 @@
       document.head.appendChild(s);
     });
   }
+  function loadExistingOs(){
+    return fetch(EXISTING_OS,{cache:'no-store'}).then(function(r){
+      if(!r.ok)throw new Error('Failed to load Personal OS wrapper');
+      return r.text();
+    }).then(function(code){
+      (0,eval)(code);
+    });
+  }
   function boot(){
-    loadScript(EXISTING_OS,'personal-os-existing-loader').then(function(){
+    loadExistingOs().then(function(){
       return loadScript('./cloud-sync.js?v='+Date.now(),'personal-os-cloud-sync');
     }).catch(function(){});
   }
