@@ -97,7 +97,8 @@
       .eq('user_id', userId)
       .eq('key', key)
       .maybeSingle();
-    if(error || !data || data.value == null) return false;
+    if(error) throw error;
+    if(!data || data.value == null) return false;
     applyingRemote = true;
     try{ originalSetItem(key, JSON.stringify(data.value)); }
     finally{ applyingRemote = false; }
@@ -105,35 +106,49 @@
   }
 
   async function pushKey(key){
-    if(!client || !userId || !isSyncKey(key) || applyingRemote) return;
+    if(!client || !userId || !isSyncKey(key) || applyingRemote) return false;
     let parsed = null;
-    try{ parsed = JSON.parse(localStorage.getItem(key) || 'null'); }catch(e){ return; }
-    await client.from('user_kv').upsert({
+    try{ parsed = JSON.parse(localStorage.getItem(key) || 'null'); }catch(e){ throw e; }
+    const {error} = await client.from('user_kv').upsert({
       user_id: userId,
       key,
       value: parsed,
       updated_at: new Date().toISOString()
     }, {onConflict:'user_id,key'});
+    if(error) throw error;
+    return true;
   }
 
   async function pushAllLocal(){
-    if(!client || !userId || syncing) return;
+    if(!client || !userId){ toastMsg('Cloud sync is not ready yet'); return; }
+    if(syncing){ toastMsg('Cloud sync is already running'); return; }
     syncing = true;
     try{
+      let uploaded = 0;
       for(const key of SYNC_KEYS){
-        if(localStorage.getItem(key) != null) await pushKey(key);
+        if(localStorage.getItem(key) != null && await pushKey(key)) uploaded++;
       }
-      toastMsg('Uploaded this device to cloud');
+      toastMsg(uploaded ? 'Uploaded '+uploaded+' keys to cloud' : 'Nothing local to upload');
+    }catch(e){
+      console.error('Personal OS cloud upload failed', e);
+      toastMsg('Upload failed: '+(e && e.message ? e.message : 'check console'));
     }finally{ syncing = false; }
   }
 
   async function pullAllRemote(){
-    if(!client || !userId || syncing) return;
+    if(!client || !userId){ toastMsg('Cloud sync is not ready yet'); return; }
+    if(syncing){ toastMsg('Cloud sync is already running'); return; }
     syncing = true;
     try{
-      for(const key of SYNC_KEYS) await pullKey(key);
+      let downloaded = 0;
+      for(const key of SYNC_KEYS){
+        if(await pullKey(key)) downloaded++;
+      }
       rerender();
-      toastMsg('Downloaded cloud data');
+      toastMsg(downloaded ? 'Downloaded '+downloaded+' cloud keys' : 'No cloud data found to download');
+    }catch(e){
+      console.error('Personal OS cloud download failed', e);
+      toastMsg('Download failed: '+(e && e.message ? e.message : 'check console'));
     }finally{ syncing = false; }
   }
 
@@ -149,7 +164,7 @@
   function patchLocalStorageWrites(){
     localStorage.setItem = function(key, value){
       originalSetItem(key, value);
-      if(isSyncKey(key)) pushKey(key);
+      if(isSyncKey(key)) pushKey(key).catch(e=>console.error('Personal OS cloud auto-sync failed', e));
     };
   }
 
@@ -173,17 +188,21 @@
       e.stopPropagation();
       if(e.stopImmediatePropagation) e.stopImmediatePropagation();
     }
-    function runCloudAction(action){
-      return function(e){
-        absorb(e);
-        action();
-      };
-    }
     function protectButton(btn, action){
+      let lastRun = 0;
+      function run(e){
+        absorb(e);
+        const now = Date.now();
+        if(now - lastRun < 700) return;
+        lastRun = now;
+        action();
+      }
       btn.addEventListener('pointerdown', absorb, true);
       btn.addEventListener('touchstart', absorb, true);
       btn.addEventListener('mousedown', absorb, true);
-      btn.addEventListener('click', runCloudAction(action), true);
+      btn.addEventListener('pointerup', run, true);
+      btn.addEventListener('touchend', run, true);
+      btn.addEventListener('click', run, true);
     }
 
     const up=document.createElement('button');
@@ -254,5 +273,5 @@
     setInterval(installCloudControls, 1200);
   }
 
-  init().catch(()=>{});
+  init().catch(e=>console.error('Personal OS cloud init failed', e));
 })();
