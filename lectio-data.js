@@ -23,6 +23,8 @@
   function boot(){
     loadExistingOs().then(function(){
       return loadScript('./cloud-sync.js?v='+Date.now(),'personal-os-cloud-sync');
+    }).then(function(){
+      return loadScript('./personal-os-ui-controls.js?v='+Date.now(),'personal-os-ui-controls');
     }).catch(function(){});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
