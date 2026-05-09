@@ -36,8 +36,8 @@
       body.aiScheduleActive #prev,body.aiScheduleActive #next,body.aiScheduleActive #today{display:inline-flex!important;visibility:visible!important;pointer-events:auto!important}
       body.aiScheduleActive #posWeekNav{display:flex!important}
       #posWeekNav{gap:8px;align-items:center;margin-left:auto}
-      #posWeekNav button,#posAllocateTasks{height:40px;border-radius:10px;border:1px solid #202946;background:#050711;color:#fff;font-weight:1000;font-size:12px;padding:0 13px;letter-spacing:.06em;cursor:pointer;pointer-events:auto}
-      #posAllocateTasks{margin-left:12px;border-color:#26314f;background:linear-gradient(180deg,#111a38,#070912);white-space:nowrap}
+      #posWeekNav button{height:40px;border-radius:10px;border:1px solid #202946;background:#050711;color:#fff;font-weight:1000;font-size:12px;padding:0 13px;letter-spacing:.06em;cursor:pointer;pointer-events:auto}
+      #posAllocateTasks{width:52px;height:42px;margin-left:12px;border-radius:11px;border:1px solid #26314f;background:linear-gradient(180deg,#111a38,#070912);color:#fff;font-weight:1000;font-size:23px;line-height:1;padding:0;cursor:pointer;pointer-events:auto}
     `;
     document.head.appendChild(s);
   }
@@ -129,33 +129,36 @@
       added++;
     }
     writeJson(STATE_KEY,state);
-    try{state.custom=state.custom}catch(e){}
     try{window.state=state}catch(e){}
     try{if(typeof render==='function')render()}catch(e){}
-    try{if(window.personalOSCloud&&window.personalOSCloud.pushAllLocal)window.personalOSCloud.pushAllLocal()}catch(e){}
     toastMsg(added?'Allocated '+added+' tasks into schedule':'No free schedule space found');
     return added;
   }
 
+  function runAllocator(){
+    if(window.personalOSUpdateSchedule&&window.personalOSUpdateSchedule!==allocateTasksIntoWeek){
+      return window.personalOSUpdateSchedule();
+    }
+    return allocateTasksIntoWeek();
+  }
+
   function installAllocateButton(){
     const title=[...document.querySelectorAll('#todoView .panelTitle')].find(el=>/to do list/i.test(el.textContent||''));
-    if(!title||document.getElementById('posAllocateTasks'))return;
-    const btn=document.createElement('button');
-    btn.id='posAllocateTasks';
-    btn.type='button';
-    btn.textContent='↻ SCHEDULE TASKS';
-    btn.title='Allocate unfinished tasks into free schedule gaps';
-    btn.onclick=e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      if(window.personalOSUpdateSchedule&&window.personalOSUpdateSchedule!==allocateTasksIntoWeek){
-        const n=window.personalOSUpdateSchedule();
-        toastMsg('Updated schedule'+(n?' with '+n+' changes':''));
-        return;
-      }
-      allocateTasksIntoWeek();
-    };
-    title.insertAdjacentElement('afterend',btn);
+    if(!title)return;
+    let btn=document.getElementById('posAllocateTasks');
+    if(!btn){
+      btn=document.createElement('button');
+      btn.id='posAllocateTasks';
+      btn.type='button';
+      btn.title='Schedule tasks';
+      btn.onclick=e=>{
+        e.preventDefault();
+        e.stopPropagation();
+        runAllocator();
+      };
+      title.insertAdjacentElement('afterend',btn);
+    }
+    btn.textContent='↻';
   }
 
   function removeCloudButtons(){
