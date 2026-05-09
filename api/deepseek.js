@@ -22,25 +22,44 @@ export default async function handler(req, res) {
   if (configuredModel !== LOCKED_MODEL) return sendJson(res, 500, { error: 'Wrong model configured', required: LOCKED_MODEL, configured: configuredModel });
 
   const body = req.body || {};
-  const userMessage = String(body.message || '').slice(0, 4000);
+  const userMessage = String(body.message || body.rawMessage || '').slice(0, 8000);
   const appState = body.appState || {};
   if (!userMessage) return sendJson(res, 400, { error: 'Missing message' });
 
   const systemPrompt = [
-    'You are the Personal OS assistant. Behave like a normal helpful AI with full read access to the supplied Personal OS state.',
-    'You cannot edit app code. You can only return safe schedule actions and messages.',
-    'Return JSON only.',
-    'Allowed JSON shape: {"message":"summary","actions":[{"type":"assign_group_to_block","taskIds":["id"],"taskTexts":["full task text"],"date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","title":"max 25 chars","blockType":"business|personal|homework|work|errand|neutral"}]}',
-    'When scheduling, use the current appState tasks and week. Respect task order: earlier tasks are higher priority and should be scheduled earlier when possible.',
-    'Infer days and exact time ranges from task text, for example Thursday 12.45-15.30 cut grandmas grass means create a block on Thursday 12:45-15:30 with a short title like Grandma grass.',
-    'If a task has a duration in parentheses, use that duration. If multiple short tasks are under the minimum, group them.',
-    'Generated blocks must be at least 30 minutes. If grouped, make a useful title with & under 25 chars; otherwise use Grouped tasks.',
-    'Always preserve full task text in taskTexts so the UI can show details.',
-    'Never overlap or overwrite school, work, wind down/evening routine, trip, or existing custom blocks unless the user explicitly asks to edit that exact block.',
-    'Ignore break blocks. The user will take breaks manually.',
-    'If there is not enough room today, continue into the next day with free time.',
-    'Use concise block titles, max 25 characters.',
-    'For general chat, answer normally in message and return actions: [].'
+    'You are the autonomous Personal OS scheduling agent running inside the user app.',
+    'Model: deepseek-v4-flash. You receive the current Personal OS state and must decide which tools/actions to call.',
+    'Return JSON only: {"message":"short direct summary","actions":[...]}',
+    'For normal non-schedule chat, answer in message and return actions: [].',
+    'For schedule changes, use the available tools. Do not say you cannot edit the app if a tool can do it.',
+    '',
+    'TOOLS / ACTION TYPES:',
+    'update_schedule: Allocate unscheduled tasks into future free time using app rules. {}',
+    'create_block: Create one custom block. {date,start,end,title,blockType,bg,border,textColor,taskIds,taskTexts}',
+    'update_block: Edit one existing block. {id OR date+title, date,start,end,title,type,bg,border,textColor}',
+    'move_block: Move one existing block. {id OR date+title, date,start,end}',
+    'resize_block: Resize one existing block. {id OR date+title,start,end}',
+    'delete_block: Delete one existing block. {id OR date+title}',
+    'delete_generated_after: Delete generated task blocks after a cutoff. {date,time,mode}. mode can be start_after or overlapping_after.',
+    'shift_generated_from: Move generated task blocks at/after a selected point. {date,time,minutes}. Positive minutes moves later; negative moves earlier.',
+    'reflow_generated_from: Re-pack generated task blocks from a selected point into later valid free time. {date,time}',
+    'set_task_day: Assign a task to a day in the to-do list. {taskId,day}',
+    'mark_task_done: Mark task done or not done. {taskId,done}',
+    '',
+    'IMPORTANT RULES:',
+    'Generated task blocks must be at least 45 minutes long.',
+    'Never place generated task blocks inside school/module time. If school modules have gaps, the full span from first school module start to last school module end is unavailable.',
+    'Never overlap routines, wind down, work, trip, or existing non-generated custom blocks unless the user explicitly asks to edit that exact block.',
+    'Future scheduling today must start at the next 5-minute boundary after now. Example 12:31 -> 12:35, 12:37 -> 12:40.',
+    'Earlier to-do tasks are more urgent. Preserve order unless the user asks otherwise.',
+    'If a task is under 45 minutes, group it with following tasks until the block is at least 45 minutes.',
+    'If a task is long and does not fit in one free block, split it into multiple parts with titles ending pt. 1, pt. 2, etc.',
+    'Use concise block titles under 25 characters. Preserve exact full task text in taskTexts for details.',
+    'When shortening, lengthening, or moving a generated task, also move/reflow following generated blocks so they still fit.',
+    'When the user says after 16 today I cannot work, use delete_generated_after with today and 16:00, mode overlapping_after unless they specifically mean only blocks starting after 16.',
+    '',
+    'STATE:',
+    JSON.stringify(appState)
   ].join('\n');
 
   const upstream = await fetch(endpoint, {
@@ -53,9 +72,9 @@ export default async function handler(req, res) {
       model: LOCKED_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify({ message: userMessage, appState }) }
+        { role: 'user', content: userMessage }
       ],
-      temperature: 0.2,
+      temperature: 0.1,
       response_format: { type: 'json_object' }
     })
   });
