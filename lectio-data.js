@@ -25,6 +25,8 @@
       return loadScript('./cloud-sync.js?v='+Date.now(),'personal-os-cloud-sync');
     }).then(function(){
       return loadScript('./personal-os-ui-controls.js?v='+Date.now(),'personal-os-ui-controls');
+    }).then(function(){
+      return loadScript('./personal-os-scheduler-override.js?v='+Date.now(),'personal-os-scheduler-override');
     }).catch(function(){});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
