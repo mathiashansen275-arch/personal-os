@@ -3,6 +3,7 @@
 (function(){
   const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
   const SESSION_KEY = 'personalOS.cloudSessionStartedAt.v1';
+  const TASK_DIRTY_KEY = 'personalOS.tasksDirty.v1';
   const SYNC_KEYS = [
     'personalOS.tasks.v1',
     'personalOS.schedule.v5',
@@ -27,6 +28,8 @@
     return !started || Date.now() - started > SESSION_MAX_AGE_MS;
   }
   function markSession(){ originalSetItem(SESSION_KEY, String(Date.now())); }
+  function markTasksDirty(){ originalSetItem(TASK_DIRTY_KEY, String(Date.now())); }
+  function clearTasksDirty(){ try{ localStorage.removeItem(TASK_DIRTY_KEY); }catch(e){} }
   function hardReload(){ setTimeout(()=>location.reload(), 80); }
   function rerender(){
     try{ if(typeof render === 'function') render(); }catch(e){}
@@ -38,13 +41,23 @@
     try{ if(Array.isArray(window.tasks)) return window.tasks; }catch(e){}
     return null;
   }
+  function storedTasks(){
+    try{
+      const parsed = JSON.parse(localStorage.getItem('personalOS.tasks.v1') || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    }catch(e){ return []; }
+  }
+  function setLiveTasks(arr){
+    try{ window.tasks = arr; }catch(e){}
+    try{ tasks = arr; }catch(e){}
+  }
   function applyRemoteValue(key, value){
     applyingRemote = true;
     try{
       originalSetItem(key, JSON.stringify(value));
       if(key === 'personalOS.tasks.v1' && Array.isArray(value)){
-        try{ window.tasks = value; }catch(e){}
-        try{ tasks = value; }catch(e){}
+        setLiveTasks(value);
+        clearTasksDirty();
       }
       if(key === 'personalOS.schedule.v5' && value && typeof value === 'object'){
         try{ window.state = value; }catch(e){}
@@ -148,18 +161,25 @@
     }, {onConflict:'user_id,key'}).select('updated_at').maybeSingle();
     if(error) throw error;
     remoteUpdatedAt[key] = (data && data.updated_at) || updatedAt;
+    if(key === 'personalOS.tasks.v1') clearTasksDirty();
     return true;
   }
 
-  function captureVisibleTasks(){
-    const arr = liveTasks();
-    if(!Array.isArray(arr)) return false;
+  function visibleTasksSnapshot(){
+    const live = liveTasks();
+    const arr = (Array.isArray(live) ? live : storedTasks()).slice();
+    const byId = new Map(arr.filter(Boolean).map(t=>[t.id,t]));
     let changed = false;
     document.querySelectorAll('#todoView .todoRow').forEach(row=>{
       const id = row.dataset && row.dataset.id;
       if(!id) return;
-      const task = arr.find(t=>t && t.id === id);
-      if(!task) return;
+      let task = byId.get(id);
+      if(!task){
+        task = {id, done:false, text:'', day:'', area:'Personal', createdAt:new Date().toISOString()};
+        arr.push(task);
+        byId.set(id, task);
+        changed = true;
+      }
       const textEl = row.querySelector('.taskPill,.taskTextInput');
       const checkEl = row.querySelector('.taskCheck');
       const dayEl = row.querySelector('.cellSelect');
@@ -172,20 +192,28 @@
       }
       if(dayEl && task.day !== dayEl.value){ task.day = dayEl.value; changed = true; }
     });
-    return changed;
+    return {tasks:arr, changed};
+  }
+
+  function captureVisibleTasks(){
+    const snap = visibleTasksSnapshot();
+    if(!snap.tasks.length) return false;
+    setLiveTasks(snap.tasks);
+    const serialized = JSON.stringify(snap.tasks);
+    if(serialized !== localStorage.getItem('personalOS.tasks.v1')){
+      originalSetItem('personalOS.tasks.v1', serialized);
+      markTasksDirty();
+      return true;
+    }
+    return snap.changed;
   }
 
   async function flushTasksToCloud(){
     if(applyingRemote || flushingTasks) return false;
-    const arr = liveTasks();
-    if(!Array.isArray(arr)) return false;
     flushingTasks = true;
     try{
-      captureVisibleTasks();
-      const serialized = JSON.stringify(arr);
-      if(serialized !== localStorage.getItem('personalOS.tasks.v1')){
-        originalSetItem('personalOS.tasks.v1', serialized);
-      }
+      const changed = captureVisibleTasks();
+      if(!changed && !localStorage.getItem(TASK_DIRTY_KEY)) return false;
       lastLocalWriteAt = Date.now();
       await pushKey('personalOS.tasks.v1');
       return true;
@@ -199,6 +227,8 @@
 
   function scheduleTaskFlush(){
     lastLocalWriteAt = Date.now();
+    markTasksDirty();
+    captureVisibleTasks();
     clearTimeout(taskFlushTimer);
     taskFlushTimer = setTimeout(flushTasksToCloud, 450);
   }
@@ -225,6 +255,7 @@
     if(syncing){ toastMsg('Cloud sync is already running'); return; }
     syncing = true;
     try{
+      clearTasksDirty();
       let downloaded = 0;
       for(const key of SYNC_KEYS){
         if(await pullKey(key, true)) downloaded++;
@@ -248,6 +279,7 @@
     try{
       let changed = 0;
       for(const key of SYNC_KEYS){
+        if(key === 'personalOS.tasks.v1' && localStorage.getItem(TASK_DIRTY_KEY)) continue;
         if(await pullKey(key, false)) changed++;
       }
       if(changed) rerender();
@@ -257,10 +289,18 @@
   }
 
   async function initialSync(){
-    await flushTasksToCloud();
+    captureVisibleTasks();
+    if(localStorage.getItem(TASK_DIRTY_KEY) && localStorage.getItem('personalOS.tasks.v1') != null){
+      await pushKey('personalOS.tasks.v1');
+    }else if(localStorage.getItem('personalOS.tasks.v1') == null){
+      await pullKey('personalOS.tasks.v1', true);
+    }else{
+      await pullKey('personalOS.tasks.v1', false);
+    }
     for(const key of SYNC_KEYS){
+      if(key === 'personalOS.tasks.v1') continue;
       if(localStorage.getItem(key) == null) await pullKey(key, true);
-      else await pushKey(key);
+      else await pullKey(key, false);
     }
     rerender();
   }
@@ -270,6 +310,7 @@
       originalSetItem(key, value);
       if(isSyncKey(key)){
         if(!applyingRemote) lastLocalWriteAt = Date.now();
+        if(key === 'personalOS.tasks.v1' && !applyingRemote) markTasksDirty();
         pushKey(key).catch(e=>console.error('Personal OS cloud auto-sync failed', e));
       }
     };
@@ -283,9 +324,10 @@
       if(e.target && e.target.closest && e.target.closest('#todoView .taskCheck,#todoView .cellSelect,#todoView .taskPill,#todoView .taskTextInput')) scheduleTaskFlush();
     }, true);
     document.addEventListener('click', e=>{
-      if(e.target && e.target.closest && e.target.closest('#addTask,#todoView .danger')) setTimeout(scheduleTaskFlush, 80);
+      if(e.target && e.target.closest && e.target.closest('#addTask,#todoView .danger')) setTimeout(scheduleTaskFlush, 160);
     }, true);
-    window.addEventListener('pagehide', ()=>{ captureVisibleTasks(); const arr = liveTasks(); if(Array.isArray(arr)) originalSetItem('personalOS.tasks.v1', JSON.stringify(arr)); }, true);
+    window.addEventListener('pagehide', ()=>{ captureVisibleTasks(); }, true);
+    window.addEventListener('beforeunload', ()=>{ captureVisibleTasks(); }, true);
     document.addEventListener('visibilitychange', ()=>{ if(document.hidden) flushTasksToCloud(); }, true);
     setInterval(flushTasksToCloud, 2500);
   }
@@ -358,6 +400,7 @@
       }, payload => {
         const row = payload.new;
         if(!row || !isSyncKey(row.key)) return;
+        if(row.key === 'personalOS.tasks.v1' && localStorage.getItem(TASK_DIRTY_KEY)) return;
         const remoteValue = JSON.stringify(row.value);
         if(remoteValue === localStorage.getItem(row.key)){
           remoteUpdatedAt[row.key] = row.updated_at || remoteUpdatedAt[row.key] || String(Date.now());
