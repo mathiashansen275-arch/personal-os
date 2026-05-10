@@ -1,5 +1,5 @@
 // Personal OS loader: preserve current OS wrapper, then enable cloud auth/sync.
-// Loader patch version: scheduler-visible-order-20260511
+// Loader patch version: wait-for-wrapper-before-overrides-20260511
 (function(){
   const EXISTING_OS='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/1a85bacfe9fe3a4eb654ecc05df1adb61e0c58c9/lectio-data.js';
   function loadScript(src,id){
@@ -21,8 +21,24 @@
       (0,eval)(code);
     });
   }
+  function waitForWrapperReady(){
+    return new Promise(function(resolve){
+      const started=Date.now();
+      const timer=setInterval(function(){
+        const chatReady=!!document.getElementById('aiChatButton');
+        const tasksReady=!!document.querySelector('#taskBody tr');
+        const scheduleReady=!!document.querySelector('#scheduleView .event');
+        if(chatReady||tasksReady||scheduleReady||Date.now()-started>8000){
+          clearInterval(timer);
+          resolve();
+        }
+      },100);
+    });
+  }
   function boot(){
     loadExistingOs().then(function(){
+      return waitForWrapperReady();
+    }).then(function(){
       return loadScript('./cloud-sync.js?v='+Date.now(),'personal-os-cloud-sync');
     }).then(function(){
       return loadScript('./personal-os-ui-controls.js?v='+Date.now(),'personal-os-ui-controls');
@@ -32,7 +48,9 @@
       return loadScript('./personal-os-agent-tools.js?v='+Date.now(),'personal-os-agent-tools');
     }).then(function(){
       return loadScript('./personal-os-disable-block-edit.js?v='+Date.now(),'personal-os-disable-block-edit');
-    }).catch(function(){});
+    }).catch(function(e){
+      console.error('Personal OS loader failed',e);
+    });
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
