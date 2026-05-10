@@ -1,4 +1,5 @@
 // Personal OS loader: preserve current OS wrapper, then enable cloud auth/sync.
+// Loader patch version: scheduler-visible-order-20260511
 (function(){
   const EXISTING_OS='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/1a85bacfe9fe3a4eb654ecc05df1adb61e0c58c9/lectio-data.js';
   function loadScript(src,id){
