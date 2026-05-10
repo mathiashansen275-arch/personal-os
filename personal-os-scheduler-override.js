@@ -3,6 +3,7 @@
   const STATE_KEY='personalOS.schedule.v5';
   const TASKS_KEY='personalOS.tasks.v1';
   const DAY_LABELS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  let visibleOrder={};
   function pad(n){return String(n).padStart(2,'0')}
   function hm(m){return pad(Math.floor(m/60))+':'+pad(Math.round(m%60))}
   function mins(s){s=String(s||'00:00');return Number(s.slice(0,2))*60+Number(s.slice(3,5))}
@@ -19,7 +20,23 @@
   function getStateObj(){const s=read(STATE_KEY,{custom:[]});if(!Array.isArray(s.custom))s.custom=[];return s}
   function getTasks(){const arr=read(TASKS_KEY,[]);return Array.isArray(arr)?arr:[]}
   function saveTasks(arr){write(TASKS_KEY,arr);try{window.tasks=arr}catch(e){}try{tasks=arr}catch(e){}}
-  function syncTasksFromDom(arr){try{document.querySelectorAll('#todoView .todoRow').forEach(row=>{const id=row.dataset&&row.dataset.id;const t=arr.find(x=>x&&x.id===id);if(!t)return;const text=row.querySelector('.taskPill,.taskTextInput,input[type=text],textarea');const cb=row.querySelector('.taskCheck,input[type=checkbox]');const day=row.querySelector('.cellSelect,select');if(text)t.text=text.value||text.textContent||t.text||'';if(cb)t.done=!!cb.checked;if(day)t.day=day.value||t.day||''})}catch(e){}}
+  function syncTasksFromDom(arr){
+    visibleOrder={};
+    try{
+      [...document.querySelectorAll('#todoView .todoRow')].forEach((row,order)=>{
+        const id=row.dataset&&row.dataset.id;
+        if(id)visibleOrder[id]=order;
+        const t=arr.find(x=>x&&x.id===id);
+        if(!t)return;
+        const text=row.querySelector('.taskPill,.taskTextInput,input[type=text],textarea');
+        const cb=row.querySelector('.taskCheck,input[type=checkbox]');
+        const day=row.querySelector('.cellSelect,select');
+        if(text)t.text=text.value||text.textContent||t.text||'';
+        if(cb)t.done=!!cb.checked;
+        if(day)t.day=day.value||t.day||'';
+      });
+    }catch(e){}
+  }
   function parseRange(text){const m=String(text||'').match(/\b(\d{1,2})[.:](\d{2})\s*-\s*(\d{1,2})[.:](\d{2})\b/);if(!m)return null;const s=Number(m[1])*60+Number(m[2]),e=Number(m[3])*60+Number(m[4]);return e>s?{start:s,end:e}:null}
   function parseDays(text){
     const s=String(text||'').toLowerCase(),found=[],add=i=>{if(!found.includes(i))found.push(i)};
@@ -94,7 +111,8 @@
   }
   function pLabel(i,date){const today=ymd(new Date());return date===today?'Today':DAY_LABELS[i]}
   function addBlock(state,plan,slot,idx,total,made){const texts=plan.items.map(x=>x.text),ids=plan.items.map(x=>x.id);state.custom.push({id:'ai-'+Date.now()+'-'+made+'-'+idx,date:slot.date,start:hm(slot.start),end:hm(slot.end),title:plan.title+(total>1?' pt. '+idx:''),type:plan.type||'personal',source:'custom',aiCreated:true,aiDetails:true,aiGrouped:plan.items.length>1,taskIds:ids,taskTexts:texts})}
-  function taskItems(tasks){return tasks.map((t,i)=>{const text=String(t.text||t.title||'').trim(),minutes=taskMinutes(text),days=parseDays(text),range=parseRange(text);return{task:t,id:t.id||('task-'+i),idx:i,text,done:!!t.done,minutes,days,range,title:shortTitle(text),type:typeFromText(text)}}).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.done&&x.minutes!=null)}
+  function orderForTask(t,i){return t&&t.id&&Object.prototype.hasOwnProperty.call(visibleOrder,t.id)?visibleOrder[t.id]:100000+i}
+  function taskItems(tasks){return tasks.map((t,i)=>{const text=String(t.text||t.title||'').trim(),minutes=taskMinutes(text),days=parseDays(text),range=parseRange(text);return{task:t,id:t.id||('task-'+i),idx:orderForTask(t,i),text,done:!!t.done,minutes,days,range,title:shortTitle(text),type:typeFromText(text)}}).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.done&&x.minutes!=null)}
   function makePlan(items){return{items,minutes:Math.max(45,items.reduce((sum,x)=>sum+x.minutes,0)),title:items.length===1?items[0].title:'Grouped tasks',type:items.some(x=>x.type==='business')?'business':'personal',days:items.length===1?items[0].days:[],range:items.length===1?items[0].range:null}}
   function buildPlans(items){
     const plans=[];
