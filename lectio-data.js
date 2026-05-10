@@ -31,6 +31,8 @@
       return loadScript('./personal-os-scheduler-overflow.js?v='+Date.now(),'personal-os-scheduler-overflow');
     }).then(function(){
       return loadScript('./personal-os-agent-tools.js?v='+Date.now(),'personal-os-agent-tools');
+    }).then(function(){
+      return loadScript('./personal-os-disable-block-edit.js?v='+Date.now(),'personal-os-disable-block-edit');
     }).catch(function(){});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
