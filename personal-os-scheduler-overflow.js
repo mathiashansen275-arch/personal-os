@@ -58,27 +58,56 @@
     (reserved[date]||[]).forEach(r=>busy.push(r));
     return subtract({start:405,end:1350},busy);
   }
-  function firstFit(minutes,startDate,startDayIndex,state,reserved,allowedDays){
-    for(let offset=0;offset<35;offset++){
+  function findFreeSlot(minMinutes,startDate,startDayIndex,state,reserved,allowedDays){
+    for(let offset=0;offset<70;offset++){
       const d=addDays(startDate,offset),date=ymd(d),di=(startDayIndex+offset)%7;
       if(allowedDays&&allowedDays.length&&!allowedDays.includes(di))continue;
       const free=freeFor(date,di,state,reserved);
-      for(const f of free){if(f.end-f.start>=minutes)return{date,dayIndex:di,start:f.start,end:f.start+minutes}}
+      for(const f of free){if(f.end-f.start>=minMinutes)return{date,dayIndex:di,start:f.start,end:f.end}}
     }
     return null;
+  }
+  function exactSlotForRange(range,startDate,startDayIndex,state,reserved,allowedDays){
+    for(let offset=0;offset<70;offset++){
+      const d=addDays(startDate,offset),date=ymd(d),di=(startDayIndex+offset)%7;
+      if(allowedDays&&allowedDays.length&&!allowedDays.includes(di))continue;
+      const free=freeFor(date,di,state,reserved);
+      if(free.some(f=>range.start>=f.start&&range.end<=f.end))return{date,dayIndex:di,start:range.start,end:range.end};
+    }
+    return null;
+  }
+  function addBlock(state,item,slot,partIndex,totalParts,made){
+    const title=item.title+(totalParts>1?' pt. '+partIndex:'');
+    state.custom.push({id:'ai-next-'+Date.now()+'-'+made+'-'+partIndex,date:slot.date,start:hm(slot.start),end:hm(slot.end),title,type:item.type,source:'custom',aiCreated:true,aiDetails:true,aiGrouped:false,taskIds:[item.id],taskTexts:[item.text]});
   }
   function overflow(){
     const state=getState(),tasks=getTasks(),reserved={};
     const visibleStart=currentMonday(),startDate=addDays(visibleStart,7),startDayIndex=0;
-    const remaining=tasks.map((t,i)=>({task:t,id:t.id||('task-'+i),idx:i,text:String(t.text||t.title||'').trim(),minutes:taskMinutes(t.text||t.title||''),days:parseDays(t.text||t.title||''),title:shortTitle(t.text||t.title||''),type:typeFromText(t.text||t.title||'')})).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.task.done&&!x.task.assigned&&x.minutes!=null).sort((a,b)=>a.idx-b.idx);
+    const remaining=tasks.map((t,i)=>({task:t,id:t.id||('task-'+i),idx:i,text:String(t.text||t.title||'').trim(),minutes:taskMinutes(t.text||t.title||''),days:parseDays(t.text||t.title||''),range:parseRange(t.text||t.title||''),title:shortTitle(t.text||t.title||''),type:typeFromText(t.text||t.title||'')})).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.task.done&&!x.task.assigned&&x.minutes!=null).sort((a,b)=>a.idx-b.idx);
     let made=0;
     for(const item of remaining){
-      const slot=firstFit(Math.max(45,item.minutes),startDate,startDayIndex,state,reserved,item.days);
-      if(!slot)continue;
-      reserved[slot.date]=reserved[slot.date]||[];reserved[slot.date].push({start:slot.start,end:slot.end});
-      state.custom.push({id:'ai-next-'+Date.now()+'-'+made,date:slot.date,start:hm(slot.start),end:hm(slot.end),title:item.title,type:item.type,source:'custom',aiCreated:true,aiDetails:true,aiGrouped:false,taskIds:[item.id],taskTexts:[item.text]});
-      item.task.assigned=true;item.task.day=DAY_LABELS[item.days.length?item.days[0]:slot.dayIndex]+' next week';
-      made++;
+      if(item.range&&item.days.length){
+        const exact=exactSlotForRange(item.range,startDate,startDayIndex,state,reserved,item.days);
+        if(!exact)continue;
+        reserved[exact.date]=reserved[exact.date]||[];reserved[exact.date].push({start:exact.start,end:exact.end});
+        addBlock(state,item,exact,1,1,made++);
+        item.task.assigned=true;item.task.day=DAY_LABELS[exact.dayIndex]+' next week';
+        continue;
+      }
+      let remainingMinutes=Math.max(45,item.minutes),part=1,parts=[];
+      while(remainingMinutes>0){
+        const slot=findFreeSlot(Math.min(45,remainingMinutes),startDate,startDayIndex,state,reserved,item.days);
+        if(!slot)break;
+        const chunk=Math.min(remainingMinutes,slot.end-slot.start);
+        if(chunk<45)break;
+        const partSlot={date:slot.date,dayIndex:slot.dayIndex,start:slot.start,end:slot.start+chunk};
+        reserved[partSlot.date]=reserved[partSlot.date]||[];reserved[partSlot.date].push({start:partSlot.start,end:partSlot.end});
+        parts.push(partSlot);
+        remainingMinutes-=chunk;
+      }
+      if(!parts.length)continue;
+      parts.forEach((slot,idx)=>addBlock(state,item,slot,idx+1,parts.length,made++));
+      item.task.assigned=true;item.task.day=DAY_LABELS[item.days.length?item.days[0]:parts[0].dayIndex]+' next week';
     }
     if(made){saveState(state);saveTasks(tasks)}
     return made;
