@@ -92,29 +92,35 @@
     }
     return remain===0?parts:[];
   }
-  function groupShort(items){const out=[];for(let i=0;i<items.length;i++){let group=[items[i]],minutes=items[i].minutes;if(minutes<45){while(i+1<items.length&&minutes<45&&items[i+1].days.length===0&&!items[i+1].range){i++;group.push(items[i]);minutes+=items[i].minutes}}out.push({items:group,minutes:Math.max(45,minutes),title:group.length===1?group[0].title:'Grouped tasks',type:group.some(x=>x.type==='business')?'business':'personal',days:[],range:null})}return out}
   function pLabel(i,date){const today=ymd(new Date());return date===today?'Today':DAY_LABELS[i]}
   function addBlock(state,plan,slot,idx,total,made){const texts=plan.items.map(x=>x.text),ids=plan.items.map(x=>x.id);state.custom.push({id:'ai-'+Date.now()+'-'+made+'-'+idx,date:slot.date,start:hm(slot.start),end:hm(slot.end),title:plan.title+(total>1?' pt. '+idx:''),type:plan.type||'personal',source:'custom',aiCreated:true,aiDetails:true,aiGrouped:plan.items.length>1,taskIds:ids,taskTexts:texts})}
   function taskItems(tasks){return tasks.map((t,i)=>{const text=String(t.text||t.title||'').trim(),minutes=taskMinutes(text),days=parseDays(text),range=parseRange(text);return{task:t,id:t.id||('task-'+i),idx:i,text,done:!!t.done,minutes,days,range,title:shortTitle(text),type:typeFromText(text)}}).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.done&&x.minutes!=null)}
+  function makePlan(items){return{items,minutes:Math.max(45,items.reduce((sum,x)=>sum+x.minutes,0)),title:items.length===1?items[0].title:'Grouped tasks',type:items.some(x=>x.type==='business')?'business':'personal',days:items.length===1?items[0].days:[],range:items.length===1?items[0].range:null}}
+  function buildPlans(items){
+    const plans=[];
+    for(let i=0;i<items.length;i++){
+      const item=items[i];
+      if(item.days.length){item.days.forEach(di=>plans.push({...makePlan([item]),days:[di]}));continue}
+      if(item.range){plans.push(makePlan([item]));continue}
+      if(item.minutes>=45){plans.push(makePlan([item]));continue}
+      const group=[item];let total=item.minutes;
+      while(total<45&&i+1<items.length&&!items[i+1].days.length&&!items[i+1].range){i++;group.push(items[i]);total+=items[i].minutes}
+      plans.push(makePlan(group));
+    }
+    return plans;
+  }
   function allocate(){
     const state=getStateObj();let tasks=getTasks();syncTasksFromDom(tasks);
     const released={};(state.custom||[]).forEach(c=>{if(c.aiCreated)(c.taskIds||[]).forEach(id=>released[id]=1)});tasks.forEach(t=>{if(released[t.id])t.assigned=false});
     state.custom=(state.custom||[]).filter(c=>!c.aiCreated);
     const items=taskItems(tasks).sort((a,b)=>a.idx-b.idx);
     if(!items.length){setStateObj(state);saveTasks(tasks);try{if(typeof render==='function')render()}catch(e){}toastMsg('No timed tasks to schedule');return 0}
-    const plans=[];
-    items.forEach(item=>{
-      if(item.days.length){item.days.forEach(di=>plans.push({items:[item],minutes:Math.max(45,item.minutes),title:item.title,type:item.type,days:[di],range:item.range}))}
-      else plans.push(item);
-    });
-    const expanded=[];let buffer=[];
-    plans.forEach(p=>{if(p.items){expanded.push(p);return}if(!p.days.length&&!p.range){buffer.push(p);return}expanded.push({items:[p],minutes:Math.max(45,p.minutes),title:p.title,type:p.type,days:p.days,range:p.range})});
-    groupShort(buffer).forEach(g=>expanded.push(g));
+    const plans=buildPlans(items);
     const reserved={};let made=0;
-    for(const plan of expanded){
+    for(const plan of plans){
       let parts=[];
       if(plan.range&&plan.days&&plan.days.length){for(const di of plan.days){const ex=findExact(plan.range,di,state,reserved);if(ex){reserved[ex.date]=reserved[ex.date]||[];reserved[ex.date].push({start:ex.start,end:ex.end});parts.push(ex)}}}
-      else if(plan.days&&plan.days.length){for(const di of plan.days)parts=parts.concat(findChunks(plan.minutes,di,state,reserved))}
+      else if(plan.days&&plan.days.length){for(const di of plan.days){const p=findChunks(plan.minutes,di,state,reserved);parts=parts.concat(p)}}
       else parts=findChunks(plan.minutes,null,state,reserved);
       if(!parts.length)continue;
       parts.forEach((slot,i)=>addBlock(state,plan,slot,i+1,parts.length,made++));
