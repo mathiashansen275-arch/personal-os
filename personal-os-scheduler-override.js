@@ -1,6 +1,6 @@
 // Personal OS scheduler override: strict visible to-do order allocation rules.
 (function(){
-  const VERSION='visible-dom-priority-v3';
+  const VERSION='visible-dom-priority-v4';
   const STATE_KEY='personalOS.schedule.v5';
   const TASKS_KEY='personalOS.tasks.v1';
   const DAY_LABELS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -99,6 +99,10 @@
     DAY_WORDS.forEach(([full,short,idx])=>{if(new RegExp('\\b('+full+'|'+short+')\\b').test(s))add(idx)});
     return found;
   }
+  function parseSelectedDays(day){
+    if(!day||/later|select/i.test(String(day)))return [];
+    return parseDays(day);
+  }
   function parseDuration(text){
     const raw=String(text||'');
     const range=parseExactRange(raw);
@@ -126,7 +130,9 @@
     return visibleRows.map((r,i)=>{
       const text=r.text;
       const minutes=parseDuration(text);
-      const days=parseDays(text);
+      const textDays=parseDays(text);
+      const selectedDays=parseSelectedDays(r.day);
+      const days=textDays.length?textDays:selectedDays;
       const range=parseExactRange(text);
       return {order:r.order,task:r.task,id:r.id||('task-'+i),text,done:!!r.done,minutes,remaining:minutes||0,days,range,title:shortTitle(text),type:typeFromText(text)};
     }).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.done&&x.minutes!=null);
@@ -160,12 +166,12 @@
       let j=i+1;
       while(total<45&&j<items.length){
         const next=items[j];
-        if(next.remaining>0&&!next.days.length&&!next.range){
-          const take=Math.min(next.remaining,45-total);
-          entries.push({item:next,minutes:take});
-          next.remaining-=take;
-          total+=take;
-        }
+        if(next.remaining<=0){j++;continue}
+        if(next.days.length||next.range)break;
+        const take=Math.min(next.remaining,45-total);
+        entries.push({item:next,minutes:take});
+        next.remaining-=take;
+        total+=take;
         j++;
       }
       plans.push(makePlan(entries,Math.max(45,total),item,{title:entries.length>1?'Grouped tasks':item.title}));
@@ -304,9 +310,10 @@
     const plans=buildPlansStrictVisibleOrder(items);
     const reserved={};
     let made=0;
+    let failedPlan=null;
     for(const plan of plans){
       const parts=placePlan(plan,state,reserved);
-      if(!parts.length)continue;
+      if(!parts.length){failedPlan=plan;break}
       parts.forEach((slot,i)=>addBlock(state,plan,slot,i+1,parts.length,made++));
       markTaskDays(plan,parts);
     }
@@ -316,16 +323,30 @@
     try{if(typeof render==='function')render()}catch(e){}
     try{if(typeof renderTasks==='function')renderTasks()}catch(e){}
     setTimeout(()=>{try{if(typeof window.personalOSInjectDetails==='function')window.personalOSInjectDetails()}catch(e){}},0);
-    toastMsg(made?'Created '+made+' scheduled block'+(made===1?'':'s'):'No free time found for timed tasks');
+    if(failedPlan)toastMsg(made?'Created '+made+' scheduled block'+(made===1?'':'s')+'; stopped before lower-priority tasks because no valid slot was found for '+failedPlan.title:'No free time found for '+failedPlan.title);
+    else toastMsg(made?'Created '+made+' scheduled block'+(made===1?'':'s'):'No free time found for timed tasks');
     return made;
   }
   function shiftFromNext(minutes){const state=getStateObj();const today=ymd(new Date()),n=nowMin();const blocks=(state.custom||[]).filter(c=>c.aiCreated&&c.date>=today).sort((a,b)=>String(a.date).localeCompare(String(b.date))||mins(a.start)-mins(b.start));const startIndex=blocks.findIndex(c=>c.date>today||mins(c.end)>n);if(startIndex<0)return 0;for(let i=startIndex;i<blocks.length;i++){blocks[i].start=hm(mins(blocks[i].start)+minutes);blocks[i].end=hm(mins(blocks[i].end)+minutes)}setStateObj(state);try{if(typeof render==='function')render()}catch(e){}return blocks.length-startIndex}
+  function runFromButton(e){
+    if(e){e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation()}
+    const n=allocate();
+    if(!n)toastMsg('No free time found for those tasks');
+    return false;
+  }
+  function bindButton(){
+    const b=document.getElementById('posAllocateTasks');
+    if(!b||b.dataset.posReliableSchedulerCapture===VERSION)return;
+    b.dataset.posReliableSchedulerCapture=VERSION;
+    b.addEventListener('click',runFromButton,true);
+  }
   function assertBinding(){
     window.personalOSSchedulerVersion=VERSION;
     window.personalOSReliableScheduleTasks=allocate;
     window.personalOSUpdateSchedule=allocate;
     window.personalOSShiftNextScheduledTask=shiftFromNext;
     window.__posSchedulerOverrideReady=true;
+    bindButton();
   }
   assertBinding();
   setInterval(assertBinding,500);
