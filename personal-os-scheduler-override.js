@@ -1,9 +1,10 @@
-// Personal OS scheduler override: strict task allocation rules.
+// Personal OS scheduler override: strict visible to-do order allocation rules.
 (function(){
   const STATE_KEY='personalOS.schedule.v5';
   const TASKS_KEY='personalOS.tasks.v1';
   const DAY_LABELS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   let visibleOrder={};
+  let visibleSequence=[];
   function pad(n){return String(n).padStart(2,'0')}
   function hm(m){return pad(Math.floor(m/60))+':'+pad(Math.round(m%60))}
   function mins(s){s=String(s||'00:00');return Number(s.slice(0,2))*60+Number(s.slice(3,5))}
@@ -20,22 +21,56 @@
   function getStateObj(){const s=read(STATE_KEY,{custom:[]});if(!Array.isArray(s.custom))s.custom=[];return s}
   function getTasks(){const arr=read(TASKS_KEY,[]);return Array.isArray(arr)?arr:[]}
   function saveTasks(arr){write(TASKS_KEY,arr);try{window.tasks=arr}catch(e){}try{tasks=arr}catch(e){}}
+  function rowText(row){
+    const el=row.querySelector('.taskPill,.taskTextInput,input.cellInput,input[type=text],textarea');
+    return el?String(el.value!=null?el.value:el.textContent||'').trim():'';
+  }
+  function rowDone(row){
+    const cb=row.querySelector('.taskCheck,input[type=checkbox]');
+    return !!(cb&&cb.checked);
+  }
+  function rowDay(row){
+    const el=row.querySelector('.cellSelect,select');
+    return el?String(el.value||''):'';
+  }
+  function todoRows(){
+    const direct=[...document.querySelectorAll('#todoView .todoRow')];
+    if(direct.length)return direct.filter(r=>r.offsetParent!==null||r.getClientRects().length);
+    const body=document.querySelector('#todoView #taskBody')||document.querySelector('#todoView tbody');
+    if(!body)return [];
+    return [...body.querySelectorAll('tr')].filter(r=>r.querySelector('.taskPill,.taskTextInput,input,textarea'));
+  }
   function syncTasksFromDom(arr){
     visibleOrder={};
-    try{
-      [...document.querySelectorAll('#todoView .todoRow')].forEach((row,order)=>{
-        const id=row.dataset&&row.dataset.id;
-        if(id)visibleOrder[id]=order;
-        const t=arr.find(x=>x&&x.id===id);
-        if(!t)return;
-        const text=row.querySelector('.taskPill,.taskTextInput,input[type=text],textarea');
-        const cb=row.querySelector('.taskCheck,input[type=checkbox]');
-        const day=row.querySelector('.cellSelect,select');
-        if(text)t.text=text.value||text.textContent||t.text||'';
-        if(cb)t.done=!!cb.checked;
-        if(day)t.day=day.value||t.day||'';
-      });
-    }catch(e){}
+    visibleSequence=[];
+    const rows=todoRows();
+    if(!rows.length)return false;
+    const used=new Set();
+    rows.forEach((row,order)=>{
+      const id=row.dataset&&row.dataset.id;
+      const text=rowText(row);
+      const done=rowDone(row);
+      const day=rowDay(row);
+      let task=null;
+      if(id)task=arr.find(x=>x&&x.id===id);
+      if(!task&&text){
+        task=arr.find(x=>x&&!used.has(x)&&String(x.text||x.title||'').trim()===text);
+      }
+      if(!task&&id){
+        task={id,done:false,text:'',day:'',area:'Personal',createdAt:new Date().toISOString()};
+        arr.push(task);
+      }
+      if(!task)return;
+      used.add(task);
+      if(id&&!task.id)task.id=id;
+      if(text)task.text=text;
+      task.done=done;
+      if(day||task.day!=null)task.day=day;
+      const key=task.id||('__text__'+text+'__'+order);
+      visibleOrder[key]=order;
+      visibleSequence.push({order,task,text:String(task.text||task.title||text||'').trim(),done,day,id:task.id||id||''});
+    });
+    return true;
   }
   function parseRange(text){const m=String(text||'').match(/\b(\d{1,2})[.:](\d{2})\s*-\s*(\d{1,2})[.:](\d{2})\b/);if(!m)return null;const s=Number(m[1])*60+Number(m[2]),e=Number(m[3])*60+Number(m[4]);return e>s?{start:s,end:e}:null}
   function parseDays(text){
@@ -76,13 +111,14 @@
     const school=eventIntervals(dayIndex).filter(b=>isSchoolTitle(b.title));
     if(school.length)busy.push({start:Math.min(...school.map(x=>x.start)),end:Math.max(...school.map(x=>x.end))});
     eventIntervals(dayIndex).filter(b=>isProtectedTitle(b.title)).forEach(b=>busy.push({start:b.start,end:b.end}));
-    (state.custom||[]).forEach(c=>{if(c.date===date)busy.push({start:mins(c.start),end:mins(c.end)})});
+    (state.custom||[]).forEach(c=>{if(c.date===date&&!c.aiCreated)busy.push({start:mins(c.start),end:mins(c.end)})});
     (reserved[date]||[]).forEach(r=>busy.push(r));
     return subtract({start,end},busy)
   }
+  function reserve(reserved,slot){reserved[slot.date]=reserved[slot.date]||[];reserved[slot.date].push({start:slot.start,end:slot.end})}
   function findExact(range,dayIndex,state,reserved){
     let d=baseDateForDay(dayIndex);
-    for(let w=0;w<10;w++){
+    for(let w=0;w<52;w++){
       const date=ymd(addDays(d,w*7));
       const free=freeFor(date,dayIndex,state,reserved);
       if(free.some(f=>range.start>=f.start&&range.end<=f.end))return{date,dayIndex,start:range.start,end:range.end};
@@ -92,40 +128,66 @@
   function findChunks(minutes,allowedDay,state,reserved){
     let remain=minutes,parts=[];
     const start=currentMonday();
-    for(let offset=0;offset<70&&remain>0;offset++){
+    for(let offset=0;offset<365&&remain>0;offset++){
       const d=addDays(start,offset),date=ymd(d),di=offset%7;
       if(allowedDay!=null&&di!==allowedDay)continue;
       const free=freeFor(date,di,state,reserved);
       for(const f of free){
         if(remain<=0)break;
-        const chunk=Math.min(remain,f.end-f.start);
+        const available=f.end-f.start;
+        const chunk=Math.min(remain,available);
         if(chunk<45&&remain>45)continue;
         if(chunk<45)break;
         const part={date,dayIndex:di,start:f.start,end:f.start+chunk};
         parts.push(part);
-        reserved[date]=reserved[date]||[];reserved[date].push({start:part.start,end:part.end});
+        reserve(reserved,part);
         remain-=chunk;
       }
     }
-    return remain===0?parts:[];
+    if(remain===0)return parts;
+    parts.forEach(p=>{reserved[p.date]=(reserved[p.date]||[]).filter(r=>!(r.start===p.start&&r.end===p.end))});
+    return [];
   }
   function pLabel(i,date){const today=ymd(new Date());return date===today?'Today':DAY_LABELS[i]}
   function addBlock(state,plan,slot,idx,total,made){const texts=plan.items.map(x=>x.text),ids=plan.items.map(x=>x.id);state.custom.push({id:'ai-'+Date.now()+'-'+made+'-'+idx,date:slot.date,start:hm(slot.start),end:hm(slot.end),title:plan.title+(total>1?' pt. '+idx:''),type:plan.type||'personal',source:'custom',aiCreated:true,aiDetails:true,aiGrouped:plan.items.length>1,taskIds:ids,taskTexts:texts})}
-  function orderForTask(t,i){return t&&t.id&&Object.prototype.hasOwnProperty.call(visibleOrder,t.id)?visibleOrder[t.id]:100000+i}
-  function taskItems(tasks){return tasks.map((t,i)=>{const text=String(t.text||t.title||'').trim(),minutes=taskMinutes(text),days=parseDays(text),range=parseRange(text);return{task:t,id:t.id||('task-'+i),idx:orderForTask(t,i),text,done:!!t.done,minutes,days,range,title:shortTitle(text),type:typeFromText(text)}}).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.done&&x.minutes!=null)}
+  function orderForTask(t,i){const key=t&&t.id;if(key&&Object.prototype.hasOwnProperty.call(visibleOrder,key))return visibleOrder[key];return 100000+i}
+  function itemsFromVisibleRows(tasks){
+    if(!visibleSequence.length)return null;
+    return visibleSequence.map((r,i)=>{const t=r.task,text=String(t.text||t.title||r.text||'').trim(),minutes=taskMinutes(text),days=parseDays(text),range=parseRange(text);return{task:t,id:t.id||('task-'+i),idx:r.order,text,done:!!t.done,minutes,days,range,title:shortTitle(text),type:typeFromText(text)}}).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.done&&x.minutes!=null);
+  }
+  function taskItems(tasks){
+    const visible=itemsFromVisibleRows(tasks);
+    if(visible)return visible;
+    return tasks.map((t,i)=>{const text=String(t.text||t.title||'').trim(),minutes=taskMinutes(text),days=parseDays(text),range=parseRange(text);return{task:t,id:t.id||('task-'+i),idx:orderForTask(t,i),text,done:!!t.done,minutes,days,range,title:shortTitle(text),type:typeFromText(text)}}).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.done&&x.minutes!=null)
+  }
   function makePlan(items){return{items,minutes:Math.max(45,items.reduce((sum,x)=>sum+x.minutes,0)),title:items.length===1?items[0].title:'Grouped tasks',type:items.some(x=>x.type==='business')?'business':'personal',days:items.length===1?items[0].days:[],range:items.length===1?items[0].range:null}}
   function buildPlans(items){
     const plans=[];
     for(let i=0;i<items.length;i++){
       const item=items[i];
-      if(item.days.length){item.days.forEach(di=>plans.push({...makePlan([item]),days:[di]}));continue}
-      if(item.range){plans.push(makePlan([item]));continue}
-      if(item.minutes>=45){plans.push(makePlan([item]));continue}
+      if(item.days.length||item.range||item.minutes>=45){plans.push(makePlan([item]));continue}
       const group=[item];let total=item.minutes;
       while(total<45&&i+1<items.length&&!items[i+1].days.length&&!items[i+1].range){i++;group.push(items[i]);total+=items[i].minutes}
       plans.push(makePlan(group));
     }
     return plans;
+  }
+  function placePlan(plan,state,reserved){
+    if(plan.range&&plan.days&&plan.days.length){
+      for(const di of plan.days){
+        const ex=findExact(plan.range,di,state,reserved);
+        if(ex){reserve(reserved,ex);return [ex]}
+      }
+      return [];
+    }
+    if(plan.days&&plan.days.length){
+      for(const di of plan.days){
+        const p=findChunks(plan.minutes,di,state,reserved);
+        if(p.length)return p;
+      }
+      return [];
+    }
+    return findChunks(plan.minutes,null,state,reserved);
   }
   function allocate(){
     const state=getStateObj();let tasks=getTasks();syncTasksFromDom(tasks);
@@ -136,10 +198,7 @@
     const plans=buildPlans(items);
     const reserved={};let made=0;
     for(const plan of plans){
-      let parts=[];
-      if(plan.range&&plan.days&&plan.days.length){for(const di of plan.days){const ex=findExact(plan.range,di,state,reserved);if(ex){reserved[ex.date]=reserved[ex.date]||[];reserved[ex.date].push({start:ex.start,end:ex.end});parts.push(ex)}}}
-      else if(plan.days&&plan.days.length){for(const di of plan.days){const p=findChunks(plan.minutes,di,state,reserved);parts=parts.concat(p)}}
-      else parts=findChunks(plan.minutes,null,state,reserved);
+      const parts=placePlan(plan,state,reserved);
       if(!parts.length)continue;
       parts.forEach((slot,i)=>addBlock(state,plan,slot,i+1,parts.length,made++));
       plan.items.forEach(x=>{x.task.assigned=true;x.task.day=parts.map(p=>pLabel(p.dayIndex,p.date)).filter((v,i,a)=>a.indexOf(v)===i).join(', ')})
