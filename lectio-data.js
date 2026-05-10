@@ -28,6 +28,8 @@
     }).then(function(){
       return loadScript('./personal-os-scheduler-override.js?v='+Date.now(),'personal-os-scheduler-override');
     }).then(function(){
+      return loadScript('./personal-os-scheduler-overflow.js?v='+Date.now(),'personal-os-scheduler-overflow');
+    }).then(function(){
       return loadScript('./personal-os-agent-tools.js?v='+Date.now(),'personal-os-agent-tools');
     }).catch(function(){});
   }
