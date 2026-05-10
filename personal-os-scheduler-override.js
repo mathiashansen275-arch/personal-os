@@ -1,6 +1,6 @@
 // Personal OS scheduler override: strict visible to-do order allocation rules.
 (function(){
-  const VERSION='visible-dom-priority-v4';
+  const VERSION='visible-dom-priority-v5';
   const STATE_KEY='personalOS.schedule.v5';
   const TASKS_KEY='personalOS.tasks.v1';
   const DAY_LABELS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -130,9 +130,7 @@
     return visibleRows.map((r,i)=>{
       const text=r.text;
       const minutes=parseDuration(text);
-      const textDays=parseDays(text);
-      const selectedDays=parseSelectedDays(r.day);
-      const days=textDays.length?textDays:selectedDays;
+      const days=parseDays(text);
       const range=parseExactRange(text);
       return {order:r.order,task:r.task,id:r.id||('task-'+i),text,done:!!r.done,minutes,remaining:minutes||0,days,range,title:shortTitle(text),type:typeFromText(text)};
     }).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.done&&x.minutes!=null);
