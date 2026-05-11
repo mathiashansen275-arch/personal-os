@@ -1,10 +1,10 @@
 // Personal OS scheduler override: strict visible to-do order allocation rules.
 (function(){
-  const VERSION='visible-dom-priority-v5';
+  const VERSION='visible-dom-priority-v6';
   const STATE_KEY='personalOS.schedule.v5';
   const TASKS_KEY='personalOS.tasks.v1';
   const DAY_LABELS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  const DAY_WORDS=[['monday','mon',0],['tuesday','tue',1],['tuesday','tues',1],['wednesday','wed',2],['thursday','thu',3],['thursday','thur',3],['thursday','thurs',3],['friday','fri',4],['saturday','sat',5],['sunday','sun',6]];
+  const DAY_WORDS=[['monday','mon',0],['tuesday','tue',1],['tuesday','tues',1],['wednesday','wed',2],['thursday','thu',3],['thursday','thur',3],['thursday','thurs',3],['friday','fri',4],['saturday','sat',5],['sunday','sun',6],['tirsdag','tir',1]];
   let lastVisibleRows=[];
 
   function pad(n){return String(n).padStart(2,'0')}
@@ -27,6 +27,7 @@
   function saveTasks(arr){write(TASKS_KEY,arr);try{window.tasks=arr}catch(e){}try{tasks=arr}catch(e){}}
   function uniq(arr){return arr.filter((x,i,a)=>x&&a.indexOf(x)===i)}
   function cleanText(s){return String(s||'').replace(/\s+/g,' ').trim()}
+  function parseText(s){return cleanText(String(s||'').replace(/[\u2010-\u2015]/g,'-'))}
 
   function getVisibleTaskRows(){
     const rows=[];
@@ -85,14 +86,15 @@
   }
 
   function parseExactRange(text){
-    const m=String(text||'').match(/\b(\d{1,2})(?:[.:](\d{2}))?\s*-\s*(\d{1,2})(?:[.:](\d{2}))?\b/);
+    const s=parseText(text);
+    const m=s.match(/(?:^|[^\d])(\d{1,2})(?:[.:](\d{2}))?\s*-\s*(\d{1,2})(?:[.:](\d{2}))?(?!\d)/);
     if(!m)return null;
     const start=Number(m[1])*60+Number(m[2]||0);
     const end=Number(m[3])*60+Number(m[4]||0);
-    return end>start?{start,end}:null;
+    return start>=0&&end>start&&end<=1440?{start,end}:null;
   }
   function parseDays(text){
-    const s=String(text||'').toLowerCase(),found=[];
+    const s=parseText(text).toLowerCase(),found=[];
     function add(i){if(!found.includes(i))found.push(i)}
     if(/\btoday\b/.test(s))add(todayIndex());
     if(/\btomorrow\b/.test(s))add((todayIndex()+1)%7);
@@ -104,7 +106,7 @@
     return parseDays(day);
   }
   function parseDuration(text){
-    const raw=String(text||'');
+    const raw=parseText(text);
     const range=parseExactRange(raw);
     if(range)return range.end-range.start;
     const parens=[...raw.matchAll(/\(([^)]*)\)/g)].map(m=>m[1]).join(' ');
@@ -120,8 +122,8 @@
   function cleanTitle(text){
     return cleanText(String(text||'')
       .replace(/\([^)]*\)/g,'')
-      .replace(/\b(mon|monday|tue|tues|tuesday|wed|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday|sun|sunday|today|tomorrow)\b/ig,'')
-      .replace(/\b\d{1,2}(?:[.:]\d{2})?\s*-\s*\d{1,2}(?:[.:]\d{2})?\b/g,''));
+      .replace(/\b(mon|monday|tue|tues|tuesday|wed|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday|sun|sunday|today|tomorrow|tir|tirsdag)\b/ig,'')
+      .replace(/\b\d{1,2}(?:[.:]\d{2})?\s*[\-\u2010-\u2015]\s*\d{1,2}(?:[.:]\d{2})?\b/g,''));
   }
   function shortTitle(text){const s=cleanTitle(text)||'Task';if(s.length<=25)return s;const words=s.split(/\s+/);let out='';for(const w of words){const test=(out?out+' ':'')+w;if(test.length>25)break;out=test}return out||s.slice(0,25)}
   function typeFromText(text){return /(agency|client|sop|strategy|business|vinted|product|research|sales|marketing|money|work|shift|tok|commentary|meta|cro)/i.test(String(text||''))?'business':'personal'}
@@ -129,9 +131,11 @@
   function buildTimedItems(visibleRows){
     return visibleRows.map((r,i)=>{
       const text=r.text;
-      const minutes=parseDuration(text);
-      const days=parseDays(text);
       const range=parseExactRange(text);
+      const minutes=parseDuration(text);
+      const textDays=parseDays(text);
+      const selectedDays=range?parseSelectedDays(r.day):[];
+      const days=textDays.length?textDays:selectedDays;
       return {order:r.order,task:r.task,id:r.id||('task-'+i),text,done:!!r.done,minutes,remaining:minutes||0,days,range,title:shortTitle(text),type:typeFromText(text)};
     }).filter(x=>x.text&&x.text.toLowerCase()!=='new task'&&!x.done&&x.minutes!=null);
   }
