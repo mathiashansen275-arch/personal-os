@@ -1,6 +1,6 @@
 // Personal OS scheduler override: strict visible to-do order allocation rules.
 (function(){
-  const VERSION='visible-dom-priority-v6';
+  const VERSION='visible-dom-priority-v7';
   const STATE_KEY='personalOS.schedule.v5';
   const TASKS_KEY='personalOS.tasks.v1';
   const DAY_LABELS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -84,6 +84,74 @@
     });
     return lastVisibleRows;
   }
+  function syncTasksToVisibleOrder(tasks){
+    const visible=lastVisibleRows.map(r=>r.task).filter(Boolean);
+    const seen=new Set(visible);
+    const ordered=visible.concat(tasks.filter(t=>!seen.has(t)));
+    saveTasks(ordered);
+    return ordered;
+  }
+  function forceDomTaskOrder(){
+    const body=document.getElementById('taskBody');
+    if(!body)return;
+    const tasks=getTasks();
+    const byId={};
+    [...body.querySelectorAll('tr')].forEach(row=>{const id=row.dataset&&row.dataset.id;if(id)byId[id]=row});
+    tasks.forEach(t=>{if(t&&t.id&&byId[t.id])body.appendChild(byId[t.id])});
+  }
+  function installTaskReorder(){
+    if(!document.getElementById('pos-task-order-style')){
+      const s=document.createElement('style');
+      s.id='pos-task-order-style';
+      s.textContent='#todoView .dragCell{cursor:grab!important;user-select:none!important}#todoView tr.todoRow.dropAbove{outline:1px solid #9b6cff!important;outline-offset:-2px!important}';
+      document.head.appendChild(s);
+    }
+    document.querySelectorAll('#todoView #taskBody tr').forEach(row=>{row.draggable=true;const h=row.querySelector('.dragCell');if(h)h.draggable=true});
+    forceDomTaskOrder();
+    if(window.__posTaskReorderInstalled)return;
+    window.__posTaskReorderInstalled=true;
+    let draggedId='';
+    document.addEventListener('dragstart',e=>{
+      const row=e.target&&e.target.closest&&e.target.closest('#todoView #taskBody tr');
+      if(!row)return;
+      draggedId=(row.dataset&&row.dataset.id)||'';
+      if(e.dataTransfer)e.dataTransfer.setData('text/plain',draggedId);
+      row.classList.add('dragging');
+    },true);
+    document.addEventListener('dragend',e=>{
+      document.querySelectorAll('#todoView #taskBody tr.dragging,#todoView #taskBody tr.dropAbove').forEach(x=>x.classList.remove('dragging','dropAbove'));
+      draggedId='';
+    },true);
+    document.addEventListener('dragover',e=>{
+      const row=e.target&&e.target.closest&&e.target.closest('#todoView #taskBody tr');
+      if(!row)return;
+      e.preventDefault();
+      row.classList.add('dropAbove');
+    },true);
+    document.addEventListener('dragleave',e=>{
+      const row=e.target&&e.target.closest&&e.target.closest('#todoView #taskBody tr');
+      if(row)row.classList.remove('dropAbove');
+    },true);
+    document.addEventListener('drop',e=>{
+      const row=e.target&&e.target.closest&&e.target.closest('#todoView #taskBody tr');
+      if(!row)return;
+      e.preventDefault();
+      e.stopPropagation();
+      if(e.stopImmediatePropagation)e.stopImmediatePropagation();
+      const from=(e.dataTransfer&&e.dataTransfer.getData('text/plain'))||draggedId;
+      const to=(row.dataset&&row.dataset.id)||'';
+      if(!from||!to||from===to)return;
+      let arr=getTasks();
+      const moving=arr.find(t=>t&&t.id===from);
+      if(!moving)return;
+      arr=arr.filter(t=>!(t&&t.id===from));
+      const idx=arr.findIndex(t=>t&&t.id===to);
+      arr.splice(idx<0?arr.length:idx,0,moving);
+      saveTasks(arr);
+      forceDomTaskOrder();
+      try{if(typeof renderProductivity==='function')renderProductivity()}catch(err){}
+    },true);
+  }
 
   function parseExactRange(text){
     const s=parseText(text);
@@ -166,17 +234,16 @@
       let total=item.remaining;
       item.remaining=0;
       let j=i+1;
-      while(total<45&&j<items.length){
+      while(total<35&&j<items.length){
         const next=items[j];
         if(next.remaining<=0){j++;continue}
         if(next.days.length||next.range)break;
-        const take=Math.min(next.remaining,45-total);
-        entries.push({item:next,minutes:take});
-        next.remaining-=take;
-        total+=take;
+        entries.push({item:next,minutes:next.remaining});
+        total+=next.remaining;
+        next.remaining=0;
         j++;
       }
-      plans.push(makePlan(entries,Math.max(45,total),item,{title:entries.length>1?'Grouped tasks':item.title}));
+      if(total>=35)plans.push(makePlan(entries,Math.max(45,total),item,{title:entries.length>1?'Grouped tasks':item.title}));
     }
     return plans;
   }
@@ -300,15 +367,16 @@
 
   function allocate(){
     const state=getStateObj();
-    const tasks=getTasks();
+    let tasks=getTasks();
     extractVisibleTasks(tasks);
+    tasks=syncTasksToVisibleOrder(tasks);
     const released={};
     (state.custom||[]).forEach(c=>{if(c.aiCreated)(c.taskIds||[]).forEach(id=>released[id]=1)});
     tasks.forEach(t=>{if(released[t.id])t.assigned=false;try{delete t.__posScheduledLabels}catch(e){}});
     state.custom=(state.custom||[]).filter(c=>!c.aiCreated);
     exposeState(state);
     const items=buildTimedItems(lastVisibleRows);
-    if(!items.length){setStateObj(state);cleanupTempTaskFields(tasks);saveTasks(tasks);try{if(typeof render==='function')render()}catch(e){}toastMsg('No timed tasks to schedule');return 0}
+    if(!items.length){setStateObj(state);cleanupTempTaskFields(tasks);saveTasks(tasks);forceDomTaskOrder();try{if(typeof render==='function')render()}catch(e){}toastMsg('No timed tasks to schedule');return 0}
     const plans=buildPlansStrictVisibleOrder(items);
     const reserved={};
     let made=0;
@@ -324,7 +392,7 @@
     saveTasks(tasks);
     try{if(typeof render==='function')render()}catch(e){}
     try{if(typeof renderTasks==='function')renderTasks()}catch(e){}
-    setTimeout(()=>{try{if(typeof window.personalOSInjectDetails==='function')window.personalOSInjectDetails()}catch(e){}},0);
+    setTimeout(()=>{forceDomTaskOrder();try{if(typeof window.personalOSInjectDetails==='function')window.personalOSInjectDetails()}catch(e){}},0);
     if(failedPlan)toastMsg(made?'Created '+made+' scheduled block'+(made===1?'':'s')+'; stopped before lower-priority tasks because no valid slot was found for '+failedPlan.title:'No free time found for '+failedPlan.title);
     else toastMsg(made?'Created '+made+' scheduled block'+(made===1?'':'s'):'No free time found for timed tasks');
     return made;
@@ -349,6 +417,7 @@
     window.personalOSShiftNextScheduledTask=shiftFromNext;
     window.__posSchedulerOverrideReady=true;
     bindButton();
+    installTaskReorder();
   }
   assertBinding();
   setInterval(assertBinding,500);
