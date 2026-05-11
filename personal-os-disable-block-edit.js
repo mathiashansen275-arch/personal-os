@@ -9,7 +9,7 @@
     if(document.getElementById('pos-disable-block-edit-style'))return;
     const s=document.createElement('style');
     s.id='pos-disable-block-edit-style';
-    s.textContent='#scheduleView .event{cursor:default!important}#scheduleView .event:hover{transform:none!important;filter:none!important;box-shadow:inherit!important}#scheduleView .event .posAgentDetails{cursor:pointer!important}#todoView td.posAutoDayCell{min-width:150px!important}#todoView .posDayStatic{display:block;width:100%;height:40px;border-radius:9px;border:1px solid #352456;background:#090812;color:#fff;padding:10px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#todoView td.posAutoDayCell select{display:none!important}';
+    s.textContent='#scheduleView .event{cursor:default!important}#scheduleView .event:hover{transform:none!important;filter:none!important;box-shadow:inherit!important}#scheduleView .event .posAgentDetails{cursor:pointer!important}#todoView select.posHiddenDaySelect{display:none!important;visibility:hidden!important;pointer-events:none!important}';
     document.head.appendChild(s);
   }
   function read(k,f){try{return JSON.parse(localStorage.getItem(k)||'')||f}catch(e){return f}}
@@ -63,17 +63,14 @@
     if(changed){try{if(typeof renderTasks==='function')renderTasks()}catch(e){}try{if(typeof renderProductivity==='function')renderProductivity()}catch(e){}}
     return changed;
   }
+  function isDaySelect(select){
+    const values=Array.from(select.options||[]).map(o=>clean(o.textContent||o.value).toLowerCase());
+    return values.includes('today')&&values.includes('monday')&&values.includes('tuesday')&&values.includes('later');
+  }
   function hideDaySelectorsSafely(){
-    const rows=document.querySelectorAll('#todoView #taskBody tr');
-    rows.forEach(row=>{
-      const select=row.querySelector('td select.cellSelect,td select');
-      if(!select)return;
-      const cell=select.closest('td');
-      if(!cell)return;
-      cell.classList.add('posAutoDayCell');
-      let label=cell.querySelector('.posDayStatic');
-      if(!label){label=document.createElement('span');label.className='posDayStatic';cell.appendChild(label)}
-      label.textContent=select.value||'Auto';
+    document.querySelectorAll('#todoView #taskBody select,#taskBody select').forEach(select=>{
+      if(!isDaySelect(select))return;
+      select.classList.add('posHiddenDaySelect');
       select.tabIndex=-1;
       select.setAttribute('aria-hidden','true');
     });
@@ -87,7 +84,7 @@
     if(e.stopImmediatePropagation)e.stopImmediatePropagation();
   }
   function tick(){
-    window.personalOSDayProgressVersion='auto-day-rollover-v1';
+    window.personalOSDayProgressVersion='auto-day-rollover-v2';
     ensureStyle();
     hideDaySelectorsSafely();
     runRollover();
