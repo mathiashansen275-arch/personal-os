@@ -1,6 +1,6 @@
 // Personal OS scheduler override: strict visible to-do order allocation rules.
 (function(){
-  const VERSION='visible-dom-priority-v7';
+  const VERSION='visible-dom-priority-v8';
   const STATE_KEY='personalOS.schedule.v5';
   const TASKS_KEY='personalOS.tasks.v1';
   const DAY_LABELS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -301,12 +301,8 @@
   function baseDateForDay(dayIndex){const start=scheduleMonday();let add=dayIndex;if(dayIndex<todayIndex())add+=7;return addDays(start,add)}
   function findExactSlot(dayIndex,range,state,reserved){
     const d=baseDateForDay(dayIndex);
-    for(let w=0;w<52;w++){
-      const date=ymd(addDays(d,w*7));
-      const free=freeFor(date,dayIndex,state,reserved);
-      if(free.some(f=>range.start>=f.start&&range.end<=f.end))return{date,dayIndex,start:range.start,end:range.end};
-    }
-    return null;
+    const date=ymd(d);
+    return {date,dayIndex,start:range.start,end:range.end};
   }
   function chooseChunk(remain,available){
     if(available<45)return 0;
