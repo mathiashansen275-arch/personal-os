@@ -47,7 +47,7 @@
     }).then(function(){
       return loadScript('./personal-os-disable-block-edit.js?v='+Date.now(),'personal-os-disable-block-edit');
     }).then(function(){
-      return loadScript('./personal-os-ai-runtime.js?v='+Date.now(),'personal-os-ai-runtime');
+      return loadScript('./personal-os-ai-runtime-v2.js?v='+Date.now(),'personal-os-ai-runtime-v2');
     }).catch(function(e){
       console.error('Personal OS loader failed',e);
     });
