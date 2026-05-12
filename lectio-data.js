@@ -50,6 +50,8 @@
       return loadScript('./personal-os-disable-block-edit.js?v='+Date.now(),'personal-os-disable-block-edit');
     }).then(function(){
       return loadScript('./personal-os-generic-tools.js?v='+Date.now(),'personal-os-generic-tools');
+    }).then(function(){
+      return loadScript('./personal-os-undo-owner-fix.js?v='+Date.now(),'personal-os-undo-owner-fix');
     }).catch(function(e){
       console.error('Personal OS loader failed',e);
     });
