@@ -49,7 +49,7 @@
     }).then(function(){
       return loadScript('./personal-os-ai-runtime-v2.js?v='+Date.now(),'personal-os-ai-runtime-v2');
     }).then(function(){
-      return loadScript('./personal-os-fill-pack-hotfix-v2.js?v='+Date.now(),'personal-os-fill-pack-hotfix-v2');
+      return loadScript('./personal-os-schedule-safety-guard.js?v='+Date.now(),'personal-os-schedule-safety-guard');
     }).catch(function(e){
       console.error('Personal OS loader failed',e);
     });
