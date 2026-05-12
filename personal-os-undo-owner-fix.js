@@ -1,0 +1,41 @@
+// Late undo owner: handles undo before the generic layer snapshots the current bad state.
+(function(){
+  const VERSION='undo-owner-fix-v1';
+  const GENERIC_VERSION='generic-tools-v4-real-owner';
+  const STATE_KEY='personalOS.schedule.v5';
+  const TASKS_KEY='personalOS.tasks.v1';
+  const UNDO_KEYS=['personalOS.schedule.undo.v3','personalOS.schedule.undo.v2','personalOS.schedule.undo.v1'];
+  const DAY_START=405,DAY_END=1350;
+  const TASKLIKE_RE=/task|todo|to do|study|homework|agency|business|personal|research|object|tok|assignment|sop|strategy|vinted|cro|write|finish|learn|read|make|prepare/i;
+  function pad(n){return String(Math.max(0,Math.floor(n))).padStart(2,'0')}
+  function hm(m){m=Math.max(0,Math.min(1439,Math.round(m)));return pad(m/60)+':'+pad(m%60)}
+  function mins(v){const m=String(v||'').match(/(\d{1,2})(?::|\.)(\d{2})/);return m?Number(m[1])*60+Number(m[2]):0}
+  function clean(s){return String(s||'').replace(/\s+/g,' ').trim()}
+  function read(k,f){try{return JSON.parse(localStorage.getItem(k)||'')||f}catch(e){return f}}
+  function write(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+  function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
+  function monday(d){const x=new Date(d),day=(x.getDay()+6)%7;x.setHours(0,0,0,0);x.setDate(x.getDate()-day);return x}
+  function currentMondaySafe(){try{if(currentMonday instanceof Date)return new Date(currentMonday)}catch(e){}try{if(window.currentMonday instanceof Date)return new Date(window.currentMonday)}catch(e){}return monday(new Date())}
+  function weekDates(){const m=currentMondaySafe();return [0,1,2,3,4,5,6].map(i=>ymd(addDays(m,i)))}
+  function targetDate(text){const s=String(text||'').toLowerCase(),ds=weekDates(),names=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];const idx=names.findIndex(n=>s.includes(n)||s.includes(n.slice(0,3)));if(idx>=0&&ds[idx])return ds[idx];return ymd(new Date())}
+  function getState(){const s=read(STATE_KEY,{custom:[],overrides:{},hidden:[]});if(!Array.isArray(s.custom))s.custom=[];if(!s.overrides)s.overrides={};if(!Array.isArray(s.hidden))s.hidden=[];return s}
+  function saveState(s){write(STATE_KEY,s);try{window.state=s}catch(e){}try{state=s}catch(e){}try{if(typeof render==='function')render()}catch(e){}setTimeout(()=>{try{if(typeof window.personalOSInjectDetails==='function')window.personalOSInjectDetails()}catch(e){}},0)}
+  function saveTasks(a){write(TASKS_KEY,a);try{window.tasks=a}catch(e){}try{tasks=a}catch(e){}try{if(typeof renderTasks==='function')renderTasks()}catch(e){}try{if(typeof renderProductivity==='function')renderProductivity()}catch(e){}}
+  function say(text,who){const box=document.getElementById('aiChatMessages');if(!box)return;const d=document.createElement('div');d.className='aiMsg '+(who||'assistant');d.textContent=text;box.appendChild(d);box.scrollTop=box.scrollHeight}
+  function generated(b){return !!(b&&(b.aiCreated||b.aiDetails||Array.isArray(b.taskIds)||Array.isArray(b.taskTexts)))}
+  function protectedReason(b){const text=clean((b&&b.type||'')+' '+(b&&b.title||''));if(!b)return 'missing';if(/school|\b2i\b|\bHL\b|\bSL\b|class|module/i.test(text))return 'school';if(/morning routine|evening routine|routine/i.test(text))return 'routine';if(/wind/i.test(text))return 'wind';if(/work/i.test(text))return 'work';if(/trip/i.test(text))return 'trip';if(b.source==='custom'&&!generated(b)&&!TASKLIKE_RE.test(text))return 'custom';return ''}
+  function movable(b){if(!b||b.aiDone||protectedReason(b))return false;if(generated(b))return true;if(/personal|business|homework|focus|deep|task/i.test(b.type||''))return true;return b.source==='custom'&&TASKLIKE_RE.test(clean((b.type||'')+' '+(b.title||'')))}
+  function merge(list){const a=list.filter(x=>x.end>x.start).sort((x,y)=>x.start-y.start),out=[];a.forEach(x=>{const l=out[out.length-1];if(l&&x.start<=l.end)l.end=Math.max(l.end,x.end);else out.push({start:x.start,end:x.end})});return out}
+  function freeSlots(start,end,busy){let free=[{start,end}];merge(busy).forEach(b=>{const next=[];free.forEach(f=>{if(b.end<=f.start||b.start>=f.end)next.push(f);else{if(b.start>f.start)next.push({start:f.start,end:b.start});if(b.end<f.end)next.push({start:b.end,end:f.end})}});free=next});return free.filter(f=>f.end-f.start>=15)}
+  function domProtectedBusy(date){const ds=weekDates(),idx=ds.indexOf(date),day=[...document.querySelectorAll('#scheduleView .day')][idx],out=[];if(!day)return out;day.querySelectorAll('.event').forEach(el=>{const time=(el.querySelector('.time')||{}).textContent||el.textContent||'',m=time.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);if(!m)return;const title=(el.querySelector('.title')||{}).textContent||'';if(/school|routine|wind|work|trip|\b2i\b|\bHL\b|\bSL\b|class|module/i.test(title+' '+el.className))out.push({start:mins(m[1]),end:mins(m[2])})});return out}
+  function hasOverlaps(blocks){const a=blocks.slice().sort((x,y)=>mins(x.start)-mins(y.start));for(let i=1;i<a.length;i++)if(mins(a[i-1].end)>mins(a[i].start))return true;return false}
+  function restoreSnapshot(){const current=localStorage.getItem(STATE_KEY)||'';for(const key of UNDO_KEYS){const u=read(key,null);if(!u||!u.state)continue;const snap=JSON.stringify(u.state);if(snap&&snap!==current){saveState(u.state);if(u.tasks)saveTasks(u.tasks);return true}}
+    const h=read('personalOS.schedule.history.v3',[]);if(Array.isArray(h)&&h.length){const last=h[h.length-1];if(last&&JSON.stringify(last)!==current){h.pop();write('personalOS.schedule.history.v3',h);saveState(last);return true}}
+    return false;
+  }
+  function repairOverlap(date){const s=getState(),blocks=s.custom.filter(b=>b.date===date&&movable(b));if(!blocks.length||!hasOverlaps(blocks))return 0;write('personalOS.schedule.undo.v3',{state:getState(),tasks:read(TASKS_KEY,[]),savedAt:new Date().toISOString(),reason:'before-overlap-repair'});const ids=new Set(blocks.map(b=>b.id).filter(Boolean)),busy=[];s.custom.forEach(b=>{if(b.date!==date)return;if(ids.has(b.id))return;if(!movable(b))busy.push({start:mins(b.start),end:mins(b.end)})});domProtectedBusy(date).forEach(b=>busy.push(b));const slots=freeSlots(DAY_START,DAY_END,busy);let si=0,cursor=slots[0]?slots[0].start:DAY_START,changed=0;blocks.sort((a,b)=>mins(a.start)-mins(b.start)).forEach(b=>{const dur=Math.max(15,mins(b.end)-mins(b.start));while(slots[si]&&cursor+dur>slots[si].end){si++;cursor=slots[si]?slots[si].start:DAY_END}if(!slots[si])return;const ns=cursor,ne=cursor+dur;if(mins(b.start)!==ns||mins(b.end)!==ne){b.start=hm(ns);b.end=hm(ne);changed++}cursor=ne});if(changed)saveState(s);return changed}
+  function handle(e){const input=document.getElementById('aiChatInput');if(!input)return;const text=clean(input.value);if(!/^\s*(undo|revert)\b/i.test(text))return;input.value='';e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();say(text,'user');if(restoreSnapshot()){say('Restored the previous schedule/task snapshot.','assistant');return}if(/overlap|bad|stack|stacked|mess/i.test(text)){const n=repairOverlap(targetDate(text));say(n?'Repaired overlapping movable task blocks. Changed block count: '+n+'.':'No restorable snapshot or repairable task overlap found. No changes made.','assistant');return}say('No saved schedule snapshot to restore. No changes made.','assistant')}
+  function own(){window.personalOSUndoOwnerFixVersion=VERSION;const b=document.getElementById('aiChatSend'),i=document.getElementById('aiChatInput');if(!b||!i)return;if(b.dataset.undoOwnerFix===VERSION&&i.dataset.undoOwnerFix===VERSION)return;const nb=b.cloneNode(true),ni=i.cloneNode(true);ni.value=i.value||'';nb.dataset.genericToolsOwned=GENERIC_VERSION;ni.dataset.genericToolsOwned=GENERIC_VERSION;delete nb.dataset.genericToolsBound;delete ni.dataset.genericToolsBound;nb.dataset.undoOwnerFix=VERSION;ni.dataset.undoOwnerFix=VERSION;b.replaceWith(nb);i.replaceWith(ni);nb.addEventListener('click',handle,true);ni.addEventListener('keydown',e=>{if(e.key==='Enter')handle(e)},true)}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',own);else own();setInterval(own,800);
+})();
