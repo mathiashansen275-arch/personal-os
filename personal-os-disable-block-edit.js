@@ -1,126 +1,45 @@
-// Personal OS: block manual schedule editing; AI/tools remain able to change state.
-// Also keeps the to-do day assignment automatic without breaking table layout.
+// Personal OS final client overrides: protect schedule blocks, hide day selector, rollover, done stripes, local agent commands.
 (function(){
-  const TASKS_KEY='personalOS.tasks.v1';
-  const HISTORY_KEY='personalOS.dailyProgress.v1';
-  const ROLLOVER_KEY='personalOS.dailyProgress.lastDate';
+  const STATE='personalOS.schedule.v5',TASKS='personalOS.tasks.v1',HIST='personalOS.dailyProgress.v1',ROLL='personalOS.dailyProgress.lastDate',DONE='personalOS.doneScheduledBlocks.v1',UNDO='personalOS.schedule.undo.v1';
   const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  function ensureStyle(){
-    if(document.getElementById('pos-disable-block-edit-style'))return;
-    const s=document.createElement('style');
-    s.id='pos-disable-block-edit-style';
-    s.textContent='#scheduleView .event{cursor:default!important}#scheduleView .event:hover{transform:none!important;filter:none!important;box-shadow:inherit!important}#scheduleView .event .posAgentDetails{cursor:pointer!important}#todoView select.posHiddenDaySelect{display:none!important;visibility:hidden!important;pointer-events:none!important}';
-    document.head.appendChild(s);
-  }
-  function read(k,f){try{return JSON.parse(localStorage.getItem(k)||'')||f}catch(e){return f}}
-  function write(k,v){localStorage.setItem(k,JSON.stringify(v))}
-  function pad(n){return String(n).padStart(2,'0')}
-  function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
-  function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
-  function clean(s){return String(s||'').replace(/\s+/g,' ').trim()}
-  function dayName(d){return DAYS[(d.getDay()+6)%7]}
-  function dayShort(d){return dayName(d).slice(0,3)}
-  function getTasks(){const a=read(TASKS_KEY,[]);return Array.isArray(a)?a:[]}
-  function saveTasks(a){write(TASKS_KEY,a);try{window.tasks=a}catch(e){}try{tasks=a}catch(e){}}
-  function taskBelongsToDate(task,date,todayMeansDate){
-    const day=clean(task&&task.day).toLowerCase();
-    if(!day)return false;
-    const name=dayName(date).toLowerCase();
-    const short=dayShort(date).toLowerCase();
-    if(/\btoday\b/.test(day)&&ymd(date)===ymd(todayMeansDate||new Date()))return true;
-    return day.includes(name)||new RegExp('\\b'+short+'\\b').test(day);
-  }
-  function snapshotDate(date,todayMeansDate){
-    const tasks=getTasks().filter(t=>t&&clean(t.text||t.title)&&taskBelongsToDate(t,date,todayMeansDate||date));
-    const total=tasks.length;
-    const done=tasks.filter(t=>!!t.done).length;
-    const percent=total?Math.round(done*100/total):0;
-    const history=read(HISTORY_KEY,{});
-    history[ymd(date)]={date:ymd(date),day:dayName(date),total,done,percent,taskIds:tasks.map(t=>t.id).filter(Boolean),taskTexts:tasks.map(t=>t.text||t.title||'').filter(Boolean),savedAt:new Date().toISOString()};
-    write(HISTORY_KEY,history);
-    return history[ymd(date)];
-  }
-  function removeCompletedForDate(date,todayMeansDate){
-    const before=getTasks();
-    const after=before.filter(t=>!(t&&t.done&&taskBelongsToDate(t,date,todayMeansDate||date)));
-    if(after.length!==before.length)saveTasks(after);
-    return after.length!==before.length;
-  }
-  function runRollover(){
-    const today=ymd(new Date());
-    let last=localStorage.getItem(ROLLOVER_KEY);
-    if(!last){localStorage.setItem(ROLLOVER_KEY,today);snapshotDate(new Date(),new Date());return false}
-    if(last>=today){snapshotDate(new Date(),new Date());return false}
-    let changed=false;
-    let cursor=new Date(last+'T00:00:00');
-    while(ymd(cursor)<today){
-      snapshotDate(cursor,cursor);
-      changed=removeCompletedForDate(cursor,cursor)||changed;
-      cursor=addDays(cursor,1);
-    }
-    localStorage.setItem(ROLLOVER_KEY,today);
-    snapshotDate(new Date(),new Date());
-    if(changed){try{if(typeof renderTasks==='function')renderTasks()}catch(e){}try{if(typeof renderProductivity==='function')renderProductivity()}catch(e){}}
-    return changed;
-  }
-  function isDaySelect(select){
-    const values=Array.from(select.options||[]).map(o=>clean(o.textContent||o.value).toLowerCase());
-    return values.includes('today')&&values.includes('monday')&&values.includes('tuesday')&&values.includes('later');
-  }
-  function hideDaySelectorsSafely(){
-    document.querySelectorAll('#todoView #taskBody select,#taskBody select').forEach(select=>{
-      if(!isDaySelect(select))return;
-      select.classList.add('posHiddenDaySelect');
-      select.tabIndex=-1;
-      select.setAttribute('aria-hidden','true');
-    });
-  }
-  function protect(e){
-    const target=e.target&&e.target.closest&&e.target.closest('#scheduleView .event');
-    if(!target)return;
-    if(e.target.closest('.posAgentDetails'))return;
-    e.preventDefault();
-    e.stopPropagation();
-    if(e.stopImmediatePropagation)e.stopImmediatePropagation();
-  }
-  function tick(){
-    window.personalOSDayProgressVersion='auto-day-rollover-v2';
-    ensureStyle();
-    hideDaySelectorsSafely();
-    runRollover();
-  }
-  ensureStyle();
-  ['click','dblclick','mousedown','mouseup','pointerdown','pointerup','touchstart','touchend'].forEach(type=>document.addEventListener(type,protect,true));
-  document.addEventListener('change',function(e){
-    if(e.target&&e.target.matches&&e.target.matches('#todoView .taskCheck,#taskBody .taskCheck,input[type=checkbox]'))setTimeout(function(){snapshotDate(new Date(),new Date())},0);
-  },true);
-  tick();
-  setInterval(tick,1000);
-})();
-
-// Keep completed scheduled task blocks visible and stripe them.
-(function(){
-  const TASKS_KEY='personalOS.tasks.v1', STATE_KEY='personalOS.schedule.v5', DONE_KEY='personalOS.doneScheduledBlocks.v1';
-  function read(k,f){try{return JSON.parse(localStorage.getItem(k)||'')||f}catch(e){return f}}
-  function write(k,v){localStorage.setItem(k,JSON.stringify(v))}
-  function clean(s){return String(s||'').replace(/\s+/g,' ').trim()}
-  function mins(s){const m=String(s||'00:00').match(/(\d{1,2}):(\d{2})/);return m?Number(m[1])*60+Number(m[2]):0}
-  function pad(n){return String(n).padStart(2,'0')}
-  function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
-  function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
-  function weekStart(){const x=new Date(),day=(x.getDay()+6)%7;x.setHours(0,0,0,0);x.setDate(x.getDate()-day);return x}
-  function tasks(){const a=read(TASKS_KEY,[]);return Array.isArray(a)?a:[]}
-  function state(){const s=read(STATE_KEY,{custom:[]});if(!Array.isArray(s.custom))s.custom=[];return s}
-  function saveState(s){write(STATE_KEY,s);try{window.state=s}catch(e){}try{state=s}catch(e){}}
+  const stopTypes=['click','dblclick','mousedown','mouseup','pointerdown','pointerup','touchstart','touchend'];
+  const ignoreWords=/^(the|and|for|with|only|just|make|made|longer|extra|minutes?|minute|mins?|min|object|thing|block|please|simply|wanted|want|extend|resize|add|it|do|so|to|be)$/;
+  function r(k,f){try{return JSON.parse(localStorage.getItem(k)||'')||f}catch(e){return f}}
+  function w(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function c(s){return String(s||'').replace(/\s+/g,' ').trim()}
+  function p(n){return String(n).padStart(2,'0')}
+  function y(d){return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())}
+  function add(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
+  function day(d){return DAYS[(d.getDay()+6)%7]}
+  function m(t){const x=String(t||'00:00').match(/(\d{1,2}):(\d{2})/);return x?Number(x[1])*60+Number(x[2]):0}
+  function hm(x){return p(Math.floor(x/60))+':'+p(x%60)}
+  function st(){const s=r(STATE,{custom:[]});if(!Array.isArray(s.custom))s.custom=[];return s}
+  function sv(s){w(STATE,s);try{window.state=s}catch(e){}try{state=s}catch(e){}try{if(typeof render==='function')render()}catch(e){}setTimeout(()=>{try{if(typeof window.personalOSInjectDetails==='function')window.personalOSInjectDetails()}catch(e){}},0)}
+  function ts(){const a=r(TASKS,[]);return Array.isArray(a)?a:[]}
+  function svt(a){w(TASKS,a);try{window.tasks=a}catch(e){}try{tasks=a}catch(e){}}
+  function style(){if(document.getElementById('pos-final-overrides-style'))return;const s=document.createElement('style');s.id='pos-final-overrides-style';s.textContent='#scheduleView .event{cursor:default!important}#scheduleView .event:hover{transform:none!important;filter:none!important;box-shadow:inherit!important}#scheduleView .event .posAgentDetails{cursor:pointer!important}#todoView select.posHiddenDaySelect{display:none!important;visibility:hidden!important;pointer-events:none!important}#scheduleView .event.posDoneScheduledBlock{position:absolute!important;filter:brightness(1.08)!important}#scheduleView .event.posDoneScheduledBlock:after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:repeating-linear-gradient(135deg,rgba(255,255,255,.35) 0 7px,rgba(255,255,255,0) 7px 15px)!important;mix-blend-mode:screen}';document.head.appendChild(s)}
+  function isDaySelect(sel){const v=Array.from(sel.options||[]).map(o=>c(o.textContent||o.value).toLowerCase());return v.includes('today')&&v.includes('monday')&&v.includes('tuesday')&&v.includes('later')}
+  function hideDays(){document.querySelectorAll('#todoView #taskBody select,#taskBody select').forEach(sel=>{if(!isDaySelect(sel))return;sel.classList.add('posHiddenDaySelect');sel.tabIndex=-1;sel.setAttribute('aria-hidden','true')})}
+  function belongs(t,d,today){const dd=c(t&&t.day).toLowerCase();if(!dd)return false;const name=day(d).toLowerCase(),sh=name.slice(0,3);if(/\btoday\b/.test(dd)&&y(d)===y(today||new Date()))return true;return dd.includes(name)||new RegExp('\\b'+sh+'\\b').test(dd)}
+  function snapDate(d,today){const a=ts().filter(t=>t&&c(t.text||t.title)&&belongs(t,d,today||d)),total=a.length,done=a.filter(t=>t.done).length,h=r(HIST,{});h[y(d)]={date:y(d),day:day(d),total,done,percent:total?Math.round(done*100/total):0,taskIds:a.map(t=>t.id).filter(Boolean),taskTexts:a.map(t=>t.text||t.title||'').filter(Boolean),savedAt:new Date().toISOString()};w(HIST,h)}
+  function rollover(){const today=y(new Date());let last=localStorage.getItem(ROLL);if(!last){localStorage.setItem(ROLL,today);snapDate(new Date(),new Date());return}if(last>=today){snapDate(new Date(),new Date());return}let a=ts(),changed=false,d=new Date(last+'T00:00:00');while(y(d)<today){snapDate(d,d);const before=a.length;a=a.filter(t=>!(t&&t.done&&belongs(t,d,d)));changed=changed||a.length!==before;d=add(d,1)}localStorage.setItem(ROLL,today);snapDate(new Date(),new Date());if(changed){svt(a);try{if(typeof renderTasks==='function')renderTasks()}catch(e){}try{if(typeof renderProductivity==='function')renderProductivity()}catch(e){}}}
   function gen(b){return !!(b&&(b.aiCreated||b.aiDetails||Array.isArray(b.taskIds)||Array.isArray(b.taskTexts)))}
-  function taskDone(id,text){const n=clean(text).toLowerCase();return tasks().some(t=>t&&t.done&&((id&&t.id===id)||(n&&clean(t.text||t.title).toLowerCase()===n)))}
-  function blockDone(b){const ids=Array.isArray(b.taskIds)?b.taskIds.filter(Boolean):[], texts=Array.isArray(b.taskTexts)?b.taskTexts.filter(Boolean):[];if(!gen(b))return false;if(ids.length)return ids.every(id=>taskDone(id,''));if(texts.length)return texts.every(t=>taskDone('',t));return false}
+  function taskDone(id,text){const n=c(text).toLowerCase();return ts().some(t=>t&&t.done&&((id&&t.id===id)||(n&&c(t.text||t.title).toLowerCase()===n)))}
+  function blockDone(b){const ids=Array.isArray(b.taskIds)?b.taskIds.filter(Boolean):[],texts=Array.isArray(b.taskTexts)?b.taskTexts.filter(Boolean):[];if(!gen(b))return false;if(ids.length)return ids.every(id=>taskDone(id,''));if(texts.length)return texts.every(t=>taskDone('',t));return false}
   function key(b){return [b.date,b.start,b.end,b.title,(b.taskIds||[]).join(','),(b.taskTexts||[]).join('|')].join('||')}
-  function ensureStyle(){if(document.getElementById('pos-done-schedule-style'))return;const s=document.createElement('style');s.id='pos-done-schedule-style';s.textContent='#scheduleView .event.posDoneScheduledBlock{position:absolute!important;filter:brightness(1.08)!important}#scheduleView .event.posDoneScheduledBlock:after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:repeating-linear-gradient(135deg,rgba(255,255,255,.35) 0 7px,rgba(255,255,255,0) 7px 15px)!important;mix-blend-mode:screen}';document.head.appendChild(s)}
-  function remember(){const s=state(), old=read(DONE_KEY,[]).filter(blockDone), map={};old.concat(s.custom.filter(blockDone)).forEach(b=>map[key(b)]={...b,aiDone:true,aiCreated:true,aiDetails:true});write(DONE_KEY,Object.values(map))}
-  function restore(){const saved=read(DONE_KEY,[]).filter(blockDone);write(DONE_KEY,saved);if(!saved.length)return;const s=state(), existing=new Set(s.custom.map(key));let changed=false;saved.forEach(b=>{if(!existing.has(key(b))){s.custom.push({...b,aiDone:true,aiCreated:true,aiDetails:true});changed=true}});if(changed){saveState(s);try{if(typeof render==='function')render()}catch(e){}}}
-  function mark(){document.querySelectorAll('#scheduleView .event.posDoneScheduledBlock').forEach(e=>e.classList.remove('posDoneScheduledBlock'));const done=state().custom.filter(blockDone);if(!done.length)return;document.querySelectorAll('#scheduleView .day').forEach((day,i)=>{const date=ymd(addDays(weekStart(),i));day.querySelectorAll('.event').forEach(el=>{const m=((el.querySelector('.time')||{}).textContent||'').match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);if(!m)return;const title=clean((el.querySelector('.title')||{}).textContent||'').toLowerCase();if(done.some(b=>b.date===date&&mins(b.start)===mins(m[1])&&mins(b.end)===mins(m[2])&&title.includes(clean(b.title).toLowerCase().slice(0,18))))el.classList.add('posDoneScheduledBlock')})})}
-  function tick(){window.personalOSDoneScheduleVersion='done-zebra-v1';ensureStyle();remember();restore();setTimeout(mark,0)}
-  document.addEventListener('change',e=>{if(e.target&&e.target.matches&&e.target.matches('#todoView .taskCheck,#taskBody .taskCheck,input[type=checkbox]'))setTimeout(tick,0)},true);
+  function doneKeep(){const s=st(),old=r(DONE,[]).filter(blockDone),map={};old.concat(s.custom.filter(blockDone)).forEach(b=>map[key(b)]={...b,aiDone:true,aiCreated:true,aiDetails:true});const saved=Object.values(map);w(DONE,saved);const existing=new Set(s.custom.map(key));let ch=false;saved.forEach(b=>{if(!existing.has(key(b))){s.custom.push(b);ch=true}});if(ch)sv(s)}
+  function weekStart(){const x=new Date(),d=(x.getDay()+6)%7;x.setHours(0,0,0,0);x.setDate(x.getDate()-d);return x}
+  function markDone(){document.querySelectorAll('#scheduleView .event.posDoneScheduledBlock').forEach(e=>e.classList.remove('posDoneScheduledBlock'));const blocks=st().custom.filter(blockDone);if(!blocks.length)return;document.querySelectorAll('#scheduleView .day').forEach((dayEl,i)=>{const date=y(add(weekStart(),i));dayEl.querySelectorAll('.event').forEach(el=>{const mm=((el.querySelector('.time')||{}).textContent||'').match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);if(!mm)return;const title=c((el.querySelector('.title')||{}).textContent||'').toLowerCase();if(blocks.some(b=>b.date===date&&m(b.start)===m(mm[1])&&m(b.end)===m(mm[2])&&title.includes(c(b.title).toLowerCase().slice(0,18))))el.classList.add('posDoneScheduledBlock')})})}
+  function protect(e){const t=e.target&&e.target.closest&&e.target.closest('#scheduleView .event');if(!t||e.target.closest('.posAgentDetails'))return;e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation()}
+  function say(txt,who){const box=document.getElementById('aiChatMessages');if(!box)return;const d=document.createElement('div');d.className='aiMsg '+(who||'assistant');d.textContent=txt;box.appendChild(d);box.scrollTop=box.scrollHeight}
+  function snap(){w(UNDO,{state:st(),savedAt:new Date().toISOString()})}
+  function revert(){const u=r(UNDO,null);if(!u||!u.state)return false;sv(u.state);return true}
+  function words(txt){return c(txt).toLowerCase().split(/[^a-z0-9æøå]+/).filter(x=>x.length>2&&!ignoreWords.test(x))}
+  function resize(txt){const mm=txt.match(/(\d+)\s*(?:min|mins|minute|minutes)/i),delta=mm?Number(mm[1]):15,ws=words(txt);if(!ws.length)return 0;const s=st();let best=null,score=0;s.custom.forEach(b=>{const hay=c([b.title].concat(b.taskTexts||[]).join(' ')).toLowerCase();const sc=ws.reduce((n,w)=>n+(hay.includes(w)?1:0),0);if(sc>score){score=sc;best=b}});if(!best)return 0;snap();best.end=hm(m(best.end)+delta);sv(s);return 1}
+  function localCmd(txt){if(/^\s*(revert|undo)\b/i.test(txt)){say(revert()?'Reverted the last schedule change.':'No saved schedule snapshot to revert.','assistant');return true}if(/\b(longer|extend|extra|resize)\b/i.test(txt)&&/\d+\s*(min|mins|minute|minutes)/i.test(txt)){say(resize(txt)?'Made the matching block longer.':'I could not find a matching block to resize.','assistant');return true}return false}
+  function intercept(e){const input=document.getElementById('aiChatInput');if(!input)return;const txt=(input.value||'').trim();if(!txt||!localCmd(txt))return;input.value='';e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation()}
+  function install(){window.personalOSLocalAgentCommandVersion='revert-resize-v1';const b=document.getElementById('aiChatSend');if(b&&!b.dataset.localCommand){b.dataset.localCommand='1';b.addEventListener('click',intercept,true)}const i=document.getElementById('aiChatInput');if(i&&!i.dataset.localCommand){i.dataset.localCommand='1';i.addEventListener('keydown',e=>{if(e.key==='Enter')intercept(e)},true)}}
+  function tick(){window.personalOSFinalOverridesVersion='final-tools-v1';style();hideDays();rollover();doneKeep();markDone();install()}
+  stopTypes.forEach(t=>document.addEventListener(t,protect,true));document.addEventListener('change',e=>{if(e.target&&e.target.matches&&e.target.matches('#todoView .taskCheck,#taskBody .taskCheck,input[type=checkbox]'))setTimeout(()=>{snapDate(new Date(),new Date());tick()},0)},true);
   tick();setInterval(tick,1000);
 })();
