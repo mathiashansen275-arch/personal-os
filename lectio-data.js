@@ -1,5 +1,5 @@
 // Personal OS loader: preserve current OS wrapper, then enable cloud auth/sync.
-// Loader patch version: wait-for-wrapper-before-overrides-20260511
+// Loader patch version: generic-tools-before-agent-20260511
 (function(){
   const EXISTING_OS='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/1a85bacfe9fe3a4eb654ecc05df1adb61e0c58c9/lectio-data.js';
   function loadScript(src,id){
@@ -44,6 +44,8 @@
       return loadScript('./personal-os-ui-controls.js?v='+Date.now(),'personal-os-ui-controls');
     }).then(function(){
       return loadScript('./personal-os-scheduler-override.js?v='+Date.now(),'personal-os-scheduler-override');
+    }).then(function(){
+      return loadScript('./personal-os-generic-tools.js?v='+Date.now(),'personal-os-generic-tools');
     }).then(function(){
       return loadScript('./personal-os-agent-tools.js?v='+Date.now(),'personal-os-agent-tools');
     }).then(function(){
