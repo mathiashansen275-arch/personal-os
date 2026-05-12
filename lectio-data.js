@@ -48,6 +48,8 @@
       return loadScript('./personal-os-disable-block-edit.js?v='+Date.now(),'personal-os-disable-block-edit');
     }).then(function(){
       return loadScript('./personal-os-ai-runtime-v2.js?v='+Date.now(),'personal-os-ai-runtime-v2');
+    }).then(function(){
+      return loadScript('./personal-os-fill-pack-hotfix.js?v='+Date.now(),'personal-os-fill-pack-hotfix');
     }).catch(function(e){
       console.error('Personal OS loader failed',e);
     });
