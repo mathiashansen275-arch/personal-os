@@ -43,3 +43,36 @@
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',tick);else tick();
   setInterval(tick,700);
 })();
+
+// Early chat capture: explicit past reflow commands must not be blocked by the AI layer.
+(function(){
+  const STATE_KEY='personalOS.schedule.v5';
+  const UNDO_KEY='personalOS.schedule.undo.v1';
+  function pad(n){return String(n).padStart(2,'0')}
+  function hm(m){return pad(Math.floor(m/60))+':'+pad(m%60)}
+  function mins(s){const m=String(s||'00:00').match(/(\d{1,2}):(\d{2})/);return m?Number(m[1])*60+Number(m[2]):0}
+  function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+  function clean(s){return String(s||'').replace(/\s+/g,' ').trim()}
+  function read(k,f){try{return JSON.parse(localStorage.getItem(k)||'')||f}catch(e){return f}}
+  function write(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function stateObj(){const s=read(STATE_KEY,{custom:[]});if(!Array.isArray(s.custom))s.custom=[];return s}
+  function saveState(s){write(STATE_KEY,s);try{window.state=s}catch(e){}try{state=s}catch(e){}try{if(typeof render==='function')render()}catch(e){}setTimeout(()=>{try{if(typeof window.personalOSInjectDetails==='function')window.personalOSInjectDetails()}catch(e){}},0)}
+  function snap(){write(UNDO_KEY,{state:stateObj(),savedAt:new Date().toISOString()})}
+  function say(text){const box=document.getElementById('aiChatMessages');if(!box)return;const d=document.createElement('div');d.className='aiMsg assistant';d.textContent=text;box.appendChild(d);box.scrollTop=box.scrollHeight}
+  function parseTime(text){let m=text.match(/\b(?:at|to|from|start(?:ing)?(?:\s+at)?|first\s+(?:one\s+)?(?:is\s+)?at)\s+(\d{1,2})(?:[.:](\d{2}))?\b/i);if(!m)m=text.match(/\b(\d{1,2})[.:](\d{2})\b/);return m?Number(m[1])*60+Number(m[2]||0):null}
+  function moveTodaySequence(text){
+    if(!/\b(move|shift|put|start|starting)\b/i.test(text)||!/\b(all|tasks|first)\b/i.test(text))return null;
+    const start=parseTime(text);if(start==null)return null;
+    const s=stateObj(),date=ymd(new Date());
+    const blocks=(s.custom||[]).filter(b=>b&&b.aiCreated&&!b.aiDone&&b.date===date).sort((a,b)=>mins(a.start)-mins(b.start));
+    if(!blocks.length)return 'I could not find generated tasks for today to move.';
+    snap();let cursor=start;
+    blocks.forEach(b=>{const dur=Math.max(15,mins(b.end)-mins(b.start));b.start=hm(cursor);b.end=hm(cursor+dur);cursor+=dur});
+    saveState(s);
+    return 'Moved today\'s generated tasks so the first starts at '+hm(start)+'. Past times are allowed because you explicitly requested it.';
+  }
+  function intercept(e){const input=document.getElementById('aiChatInput');if(!input)return;const text=(input.value||'').trim();if(!text)return;const result=moveTodaySequence(text);if(!result)return;input.value='';e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();const box=document.getElementById('aiChatMessages');if(box){const u=document.createElement('div');u.className='aiMsg user';u.textContent=text;box.appendChild(u)}say(result)}
+  function install(){window.personalOSEarlyPastReflowVersion='early-past-reflow-v1';const b=document.getElementById('aiChatSend');if(b&&!b.dataset.earlyPastReflow){b.dataset.earlyPastReflow='1';b.addEventListener('click',intercept,true)}const i=document.getElementById('aiChatInput');if(i&&!i.dataset.earlyPastReflow){i.dataset.earlyPastReflow='1';i.addEventListener('keydown',e=>{if(e.key==='Enter')intercept(e)},true)}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install);else install();
+  setInterval(install,500);
+})();
