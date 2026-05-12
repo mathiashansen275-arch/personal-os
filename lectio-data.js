@@ -1,5 +1,5 @@
 // Personal OS loader: preserve current OS wrapper, then enable cloud auth/sync.
-// Loader patch version: generic-tools-last-owner-20260512
+// Loader patch version: single-ai-runtime-20260512
 (function(){
   const EXISTING_OS='https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/1a85bacfe9fe3a4eb654ecc05df1adb61e0c58c9/lectio-data.js';
   function loadScript(src,id){
@@ -45,13 +45,9 @@
     }).then(function(){
       return loadScript('./personal-os-scheduler-override.js?v='+Date.now(),'personal-os-scheduler-override');
     }).then(function(){
-      return loadScript('./personal-os-agent-tools.js?v='+Date.now(),'personal-os-agent-tools');
-    }).then(function(){
       return loadScript('./personal-os-disable-block-edit.js?v='+Date.now(),'personal-os-disable-block-edit');
     }).then(function(){
-      return loadScript('./personal-os-generic-tools.js?v='+Date.now(),'personal-os-generic-tools');
-    }).then(function(){
-      return loadScript('./personal-os-undo-owner-fix.js?v='+Date.now(),'personal-os-undo-owner-fix');
+      return loadScript('./personal-os-ai-runtime.js?v='+Date.now(),'personal-os-ai-runtime');
     }).catch(function(e){
       console.error('Personal OS loader failed',e);
     });
