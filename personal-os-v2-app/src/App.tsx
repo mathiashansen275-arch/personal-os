@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
-import interactionPlugin, { EventDragStopArg } from '@fullcalendar/interaction';
-import type { EventContentArg, EventDropArg, EventInput } from '@fullcalendar/core';
-import type { EventResizeDoneArg } from '@fullcalendar/interaction';
+import interactionPlugin from '@fullcalendar/interaction';
+import type { EventContentArg, EventInput } from '@fullcalendar/core';
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
 import { eventLabel, eventTheme } from './theme';
 import type { EventKind, PersonalOSEvent, PersonalOSTask } from './models';
@@ -120,18 +119,26 @@ function SchedulePage() {
             eventOverlap={false}
             eventAllow={(dropInfo, draggedEvent) => {
               const existing = events.find((event) => event.id === draggedEvent.id);
-              if (!existing) return false;
+              if (!existing || !dropInfo.end) return false;
               return canPlaceEvent(events, { ...existing, start: toLocalIso(dropInfo.start), end: toLocalIso(dropInfo.end) }, [existing.id], false).ok;
             }}
             events={calendarEvents}
             eventContent={renderEventContent}
-            eventDrop={(info: EventDropArg) => {
-              const result = moveEventTool(info.event.id, toLocalIso(info.event.start!), toLocalIso(info.event.end!), false);
+            eventDrop={(info) => {
+              if (!info.event.start || !info.event.end) {
+                info.revert();
+                return;
+              }
+              const result = moveEventTool(info.event.id, toLocalIso(info.event.start), toLocalIso(info.event.end), false);
               if (!result.ok) info.revert();
               showResult(result);
             }}
-            eventResize={(info: EventResizeDoneArg) => {
-              const result = resizeEventTool(info.event.id, toLocalIso(info.event.end!), toLocalIso(info.event.start!), false);
+            eventResize={(info) => {
+              if (!info.event.start || !info.event.end) {
+                info.revert();
+                return;
+              }
+              const result = resizeEventTool(info.event.id, toLocalIso(info.event.end), toLocalIso(info.event.start), false);
               if (!result.ok) info.revert();
               showResult(result);
             }}
