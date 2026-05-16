@@ -9,17 +9,10 @@ const TASKS_KEY = 'personalOS.v2.tasks';
 const UNDO_KEY = 'personalOS.v2.undo';
 const META_KEY = 'personalOS.v2.meta';
 
-type FillGapsArgs = {
-  date: string;
-  start: string;
-  end: string;
-  includePast: boolean;
-};
-
-type V2Meta = {
-  importedAt?: string;
-  lectioLoaded?: boolean;
-};
+type FillGapsArgs = { date: string; start: string; end: string; includePast: boolean };
+type V2Meta = { importedAt?: string; lectioLoaded?: boolean };
+type DeleteMatchArgs = { query: string; dates?: string[]; allowProtected?: boolean };
+type MoveMatchArgs = { query: string; dates?: string[]; start: string; end: string; allowProtected?: boolean };
 
 type V2Store = {
   events: PersonalOSEvent[];
@@ -36,9 +29,12 @@ type V2Store = {
   saveTask: (task: PersonalOSTask) => void;
   addTask: () => void;
   deleteTask: (id: string) => ToolResult;
+  reorderTask: (dragId: string, dropId: string) => ToolResult;
   createEventTool: (event: Omit<PersonalOSEvent, 'id'> & { id?: string; includePast?: boolean }) => ToolResult;
   deleteEventTool: (id: string) => ToolResult;
   deleteWorkEventsTool: (dates: string[]) => ToolResult;
+  deleteEventsMatchingTool: (args: DeleteMatchArgs) => ToolResult;
+  moveEventsMatchingTool: (args: MoveMatchArgs) => ToolResult;
   moveEventTool: (id: string, start: string, end: string, includePast?: boolean) => ToolResult;
   resizeEventTool: (id: string, end: string, start?: string, includePast?: boolean) => ToolResult;
   fillGapsTool: (args: FillGapsArgs) => ToolResult;
@@ -62,30 +58,14 @@ export const useV2Store = create<V2Store>((set, get) => ({
     const currentTasks = readJson<PersonalOSTask[]>(TASKS_KEY, []);
     const meta = readJson<V2Meta>(META_KEY, {});
     if (currentEvents.length || currentTasks.length) {
-      set({
-        events: currentEvents,
-        tasks: currentTasks,
-        undo: readJson<UndoSnapshot[]>(UNDO_KEY, []),
-        status: 'Loaded v2 state.',
-        lectioSynced: Boolean(meta.lectioLoaded),
-        lectioStatus: meta.lectioLoaded ? 'Lectio synced' : 'Lectio not synced',
-        isReady: true,
-      });
+      set({ events: currentEvents, tasks: currentTasks, undo: readJson<UndoSnapshot[]>(UNDO_KEY, []), status: 'Loaded v2 state.', lectioSynced: Boolean(meta.lectioLoaded), lectioStatus: meta.lectioLoaded ? 'Lectio synced' : 'Lectio not synced', isReady: true });
       return;
     }
-
     const imported = await importLegacyData();
     const nextMeta = { importedAt: new Date().toISOString(), lectioLoaded: imported.lectioLoaded };
     persist(imported.events, imported.tasks, get().undo);
     writeJson(META_KEY, nextMeta);
-    set({
-      events: imported.events,
-      tasks: imported.tasks,
-      status: 'Imported legacy state into v2 keys.',
-      lectioSynced: imported.lectioLoaded,
-      lectioStatus: imported.lectioLoaded ? 'Lectio synced' : 'Lectio not synced',
-      isReady: true,
-    });
+    set({ events: imported.events, tasks: imported.tasks, status: 'Imported legacy state into v2 keys.', lectioSynced: imported.lectioLoaded, lectioStatus: imported.lectioLoaded ? 'Lectio synced' : 'Lectio not synced', isReady: true });
   },
 
   forceLegacyImport: async () => {
@@ -94,14 +74,7 @@ export const useV2Store = create<V2Store>((set, get) => ({
     const nextMeta = { importedAt: new Date().toISOString(), lectioLoaded: imported.lectioLoaded };
     persist(imported.events, imported.tasks, get().undo);
     writeJson(META_KEY, nextMeta);
-    set({
-      events: imported.events,
-      tasks: imported.tasks,
-      selectedEventId: undefined,
-      status: 'Re-imported legacy data into v2 keys.',
-      lectioSynced: imported.lectioLoaded,
-      lectioStatus: imported.lectioLoaded ? 'Lectio synced' : 'Lectio not synced',
-    });
+    set({ events: imported.events, tasks: imported.tasks, selectedEventId: undefined, status: 'Re-imported legacy data into v2 keys.', lectioSynced: imported.lectioLoaded, lectioStatus: imported.lectioLoaded ? 'Lectio synced' : 'Lectio not synced' });
     return { ok: true, changedEventCount: imported.events.length };
   },
 
@@ -114,14 +87,7 @@ export const useV2Store = create<V2Store>((set, get) => ({
   },
 
   addTask: () => {
-    const task: PersonalOSTask = {
-      id: newId('task'),
-      text: 'New task',
-      done: false,
-      priority: 3,
-      kind: 'personal',
-      scheduledEventIds: [],
-    };
+    const task: PersonalOSTask = { id: newId('task'), text: 'New task', done: false, priority: 3, kind: 'personal', scheduledEventIds: [] };
     const tasks = [...get().tasks, task];
     persist(get().events, tasks, get().undo);
     set({ tasks });
@@ -139,19 +105,25 @@ export const useV2Store = create<V2Store>((set, get) => ({
     return { ok: true, changedEventCount: task.scheduledEventIds.length };
   },
 
+  reorderTask: (dragId, dropId) => {
+    if (dragId === dropId) return { ok: false, reason: 'Task order unchanged.' };
+    const tasks = [...get().tasks];
+    const from = tasks.findIndex((task) => task.id === dragId);
+    const to = tasks.findIndex((task) => task.id === dropId);
+    if (from < 0 || to < 0) return { ok: false, reason: 'Task not found.' };
+    pushUndo('reorderTask', get());
+    const [moved] = tasks.splice(from, 1);
+    tasks.splice(to, 0, moved);
+    persist(get().events, tasks, get().undo);
+    set({ tasks });
+    return { ok: true };
+  },
+
   createEventTool: (event) => mutateWithUndo('createEvent', get, set, (state) => createEvent(state, event)),
   deleteEventTool: (id) => mutateWithUndo('deleteEvent', get, set, (state) => deleteEvent(state, id)),
-  deleteWorkEventsTool: (dates) => {
-    const dateSet = new Set(dates);
-    const matching = get().events.filter((event) => event.kind === 'work' && dateSet.has(dateKey(event.start)));
-    if (!matching.length) return { ok: false, reason: 'No matching work blocks found.' };
-    pushUndo('deleteWorkEvents', get());
-    const ids = new Set(matching.map((event) => event.id));
-    const events = get().events.filter((event) => !ids.has(event.id));
-    persist(events, get().tasks, get().undo);
-    set({ events, selectedEventId: undefined });
-    return { ok: true, changedEventCount: matching.length };
-  },
+  deleteWorkEventsTool: (dates) => deleteMatchingEvents(get, set, { query: 'work', dates, allowProtected: true }),
+  deleteEventsMatchingTool: (args) => deleteMatchingEvents(get, set, args),
+  moveEventsMatchingTool: (args) => moveMatchingEvents(get, set, args),
   moveEventTool: (id, start, end, includePast) => mutateWithUndo('moveEvent', get, set, (state) => moveEvent(state, id, start, end, includePast)),
   resizeEventTool: (id, end, start, includePast) => mutateWithUndo('resizeEvent', get, set, (state) => resizeEvent(state, id, end, start, includePast)),
   fillGapsTool: (args) => mutateWithUndo('fillGaps', get, set, (state) => fillGaps(state, args)),
@@ -165,6 +137,50 @@ export const useV2Store = create<V2Store>((set, get) => ({
     return { ok: true };
   },
 }));
+
+function deleteMatchingEvents(get: () => V2Store, set: (partial: Partial<V2Store>) => void, args: DeleteMatchArgs): ToolResult {
+  const state = get();
+  const matching = findMatchingEvents(state.events, args.query, args.dates).filter((event) => args.allowProtected || !event.protected);
+  if (!matching.length) return { ok: false, reason: 'No matching blocks found.' };
+  pushUndo('deleteEventsMatching', state);
+  const ids = new Set(matching.map((event) => event.id));
+  const events = state.events.filter((event) => !ids.has(event.id));
+  const tasks = state.tasks.map((task) => ({ ...task, scheduledEventIds: task.scheduledEventIds.filter((id) => !ids.has(id)) }));
+  persist(events, tasks, get().undo);
+  set({ events, tasks, selectedEventId: undefined });
+  return { ok: true, changedEventCount: matching.length };
+}
+
+function moveMatchingEvents(get: () => V2Store, set: (partial: Partial<V2Store>) => void, args: MoveMatchArgs): ToolResult {
+  const state = get();
+  const matching = findMatchingEvents(state.events, args.query, args.dates).filter((event) => args.allowProtected || !event.protected);
+  if (!matching.length) return { ok: false, reason: 'No matching movable blocks found.' };
+  if (matching.length > 1) return { ok: false, reason: 'More than one block matched. Add a date or more exact title.' };
+  const event = matching[0];
+  const date = args.dates?.[0] ?? dateKey(event.start);
+  const nextEvent = { ...event, start: `${date}T${args.start}:00`, end: `${date}T${args.end}:00` };
+  const events = state.events.map((item) => (item.id === event.id ? nextEvent : item)).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+  const valid = validateSchedule(events);
+  if (!valid.ok) return valid;
+  pushUndo('moveEventsMatching', state);
+  persist(events, state.tasks, get().undo);
+  set({ events, selectedEventId: undefined });
+  return { ok: true, changedEventCount: 1 };
+}
+
+function findMatchingEvents(events: PersonalOSEvent[], query: string, dates?: string[]): PersonalOSEvent[] {
+  const normalizedQuery = normalize(query);
+  const dateSet = dates?.length ? new Set(dates) : undefined;
+  const cleanedQuery = normalizedQuery.replace(/\b(remove|delete|move|block|called|from|on|to|at|the|one|today|tomorrow|weekend|may|january|february|march|april|june|july|august|september|october|november|december|\d+(st|nd|rd|th)?|\d{1,2}:\d{2})\b/g, ' ').replace(/\s+/g, ' ').trim();
+  return events.filter((event) => {
+    if (dateSet && !dateSet.has(dateKey(event.start))) return false;
+    const title = normalize(event.title);
+    const kind = normalize(event.kind);
+    if (normalizedQuery.includes(title) || title.includes(cleanedQuery)) return true;
+    if (cleanedQuery && title.includes(cleanedQuery)) return true;
+    return Boolean(kind && normalizedQuery.includes(kind));
+  });
+}
 
 function mutateWithUndo(
   reason: string,
@@ -196,18 +212,9 @@ function persist(events: PersonalOSEvent[], tasks: PersonalOSTask[], undo: UndoS
 }
 
 function readJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
+  try { const raw = localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; }
 }
 
-function writeJson(key: string, value: unknown): void {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-function newId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
+function writeJson(key: string, value: unknown): void { localStorage.setItem(key, JSON.stringify(value)); }
+function normalize(value: string): string { return value.toLowerCase().replace(/[^a-z0-9æøå\s:&.-]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function newId(prefix: string): string { return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; }
