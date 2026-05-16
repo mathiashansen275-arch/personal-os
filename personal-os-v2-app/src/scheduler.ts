@@ -110,7 +110,7 @@ export function fillGaps(state: EngineState, input: FillGapsInput): EngineMutati
   }
 
   for (const task of taskCandidates) {
-    const minutes = task.estimatedMinutes ?? 60;
+    const minutes = task.estimatedMinutes ?? estimateTaskMinutes(task.text);
     const gap = findFreeGaps([...fixedEvents, ...addedEvents], input.date, input.start, input.end, input.includePast).find(
       (slot) => slot.end.getTime() - slot.start.getTime() >= minutes * 60_000,
     );
@@ -149,6 +149,33 @@ export function fillGaps(state: EngineState, input: FillGapsInput): EngineMutati
     scheduledTaskCount,
     skipped,
   };
+}
+
+export function estimateTaskMinutes(text: string): number {
+  const parenMatches = [...text.matchAll(/\(([^)]*)\)/g)].map((match) => match[1]);
+  for (const content of parenMatches.reverse()) {
+    const minutes = parseDurationText(content);
+    if (minutes) return minutes;
+  }
+  return parseDurationText(text) ?? 60;
+}
+
+function parseDurationText(text: string): number | null {
+  const normalized = text.toLowerCase().replace(/,/g, '.');
+  const hourMinute = normalized.match(/(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s*(?:(\d+)\s*(?:m|min|mins|minute|minutes))?/);
+  if (hourMinute) {
+    const hours = Number(hourMinute[1]);
+    const minutes = hourMinute[2] ? Number(hourMinute[2]) : 0;
+    return clampDuration(Math.round(hours * 60 + minutes));
+  }
+  const minute = normalized.match(/(\d+)\s*(?:m|min|mins|minute|minutes)\b/);
+  if (minute) return clampDuration(Number(minute[1]));
+  return null;
+}
+
+function clampDuration(minutes: number): number {
+  if (!Number.isFinite(minutes)) return 60;
+  return Math.max(5, Math.min(720, minutes));
 }
 
 export function findFreeGaps(events: PersonalOSEvent[], date: string, start: string, end: string, includePast: boolean) {
