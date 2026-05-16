@@ -15,12 +15,19 @@ type FillGapsArgs = {
   includePast: boolean;
 };
 
+type V2Meta = {
+  importedAt?: string;
+  lectioLoaded?: boolean;
+};
+
 type V2Store = {
   events: PersonalOSEvent[];
   tasks: PersonalOSTask[];
   undo: UndoSnapshot[];
   selectedEventId?: string;
   status: string;
+  lectioSynced: boolean;
+  lectioStatus: string;
   isReady: boolean;
   initialize: () => Promise<void>;
   forceLegacyImport: () => Promise<ToolResult>;
@@ -36,34 +43,63 @@ type V2Store = {
   undoTool: () => ToolResult;
 };
 
+const savedMeta = readJson<V2Meta>(META_KEY, {});
+
 export const useV2Store = create<V2Store>((set, get) => ({
   events: readJson<PersonalOSEvent[]>(EVENTS_KEY, []),
   tasks: readJson<PersonalOSTask[]>(TASKS_KEY, []),
   undo: readJson<UndoSnapshot[]>(UNDO_KEY, []),
   selectedEventId: undefined,
   status: 'Loading v2 storage...',
+  lectioSynced: Boolean(savedMeta.lectioLoaded),
+  lectioStatus: savedMeta.lectioLoaded ? 'Lectio synced' : 'Lectio not synced',
   isReady: false,
 
   initialize: async () => {
     const currentEvents = readJson<PersonalOSEvent[]>(EVENTS_KEY, []);
     const currentTasks = readJson<PersonalOSTask[]>(TASKS_KEY, []);
+    const meta = readJson<V2Meta>(META_KEY, {});
     if (currentEvents.length || currentTasks.length) {
-      set({ events: currentEvents, tasks: currentTasks, undo: readJson<UndoSnapshot[]>(UNDO_KEY, []), status: 'Loaded v2 state.', isReady: true });
+      set({
+        events: currentEvents,
+        tasks: currentTasks,
+        undo: readJson<UndoSnapshot[]>(UNDO_KEY, []),
+        status: 'Loaded v2 state.',
+        lectioSynced: Boolean(meta.lectioLoaded),
+        lectioStatus: meta.lectioLoaded ? 'Lectio synced' : 'Lectio not synced',
+        isReady: true,
+      });
       return;
     }
 
     const imported = await importLegacyData();
+    const nextMeta = { importedAt: new Date().toISOString(), lectioLoaded: imported.lectioLoaded };
     persist(imported.events, imported.tasks, get().undo);
-    writeJson(META_KEY, { importedAt: new Date().toISOString(), lectioLoaded: imported.lectioLoaded });
-    set({ events: imported.events, tasks: imported.tasks, status: 'Imported legacy state into v2 keys.', isReady: true });
+    writeJson(META_KEY, nextMeta);
+    set({
+      events: imported.events,
+      tasks: imported.tasks,
+      status: 'Imported legacy state into v2 keys.',
+      lectioSynced: imported.lectioLoaded,
+      lectioStatus: imported.lectioLoaded ? 'Lectio synced' : 'Lectio not synced',
+      isReady: true,
+    });
   },
 
   forceLegacyImport: async () => {
     const imported = await importLegacyData();
     pushUndo('forceLegacyImport', get());
+    const nextMeta = { importedAt: new Date().toISOString(), lectioLoaded: imported.lectioLoaded };
     persist(imported.events, imported.tasks, get().undo);
-    writeJson(META_KEY, { importedAt: new Date().toISOString(), lectioLoaded: imported.lectioLoaded });
-    set({ events: imported.events, tasks: imported.tasks, selectedEventId: undefined, status: 'Re-imported legacy data into v2 keys.' });
+    writeJson(META_KEY, nextMeta);
+    set({
+      events: imported.events,
+      tasks: imported.tasks,
+      selectedEventId: undefined,
+      status: 'Re-imported legacy data into v2 keys.',
+      lectioSynced: imported.lectioLoaded,
+      lectioStatus: imported.lectioLoaded ? 'Lectio synced' : 'Lectio not synced',
+    });
     return { ok: true, changedEventCount: imported.events.length };
   },
 
