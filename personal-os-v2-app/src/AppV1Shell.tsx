@@ -15,6 +15,7 @@ type Tab = 'schedule' | 'tasks' | 'productivity';
 type Msg = { role: 'user' | 'assistant'; text: string };
 const todayKey = dateKey(new Date());
 const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 
 export function AppV1Shell() {
   const [tab, setTab] = useState<Tab>('schedule');
@@ -53,14 +54,15 @@ function Assistant({ onClose }: { onClose: () => void }) {
   const tasks = useV2Store((s) => s.tasks);
   const fill = useV2Store((s) => s.fillGapsTool);
   const undo = useV2Store((s) => s.undoTool);
-  const deleteWorkEvents = useV2Store((s) => s.deleteWorkEventsTool);
+  const deleteMatching = useV2Store((s) => s.deleteEventsMatchingTool);
+  const moveMatching = useV2Store((s) => s.moveEventsMatchingTool);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([{ role: 'assistant', text: 'Ask DeepSeek anything, or ask it to change blocks.' }]);
   async function send() {
     const text = input.trim(); if (!text || busy) return;
     setInput(''); setBusy(true); setMsgs((m) => [...m, { role: 'user', text }]);
-    const local = localTool(text, fill, undo, deleteWorkEvents); if (local) { setMsgs((m) => [...m, { role: 'assistant', text: local }]); setBusy(false); return; }
+    const local = localTool(text, fill, undo, deleteMatching, moveMatching); if (local) { setMsgs((m) => [...m, { role: 'assistant', text: local }]); setBusy(false); return; }
     try { const r = await fetch('/api/deepseek', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, context: { events: events.slice(0, 120), tasks: tasks.slice(0, 80), rules: { noOverlap: true, protectedKinds: PROTECTED_KINDS } } }) }); if (!r.ok) throw new Error('no api'); const data = await r.json() as { reply?: string; content?: string; message?: string }; setMsgs((m) => [...m, { role: 'assistant', text: data.reply || data.content || data.message || 'No changes made.' }]); } catch { setMsgs((m) => [...m, { role: 'assistant', text: 'AI backend is not available in this v2 deployment yet. No changes made.' }]); }
     setBusy(false);
   }
@@ -72,19 +74,24 @@ function Tasks() {
   const addTask = useV2Store((s) => s.addTask);
   const saveTask = useV2Store((s) => s.saveTask);
   const deleteTask = useV2Store((s) => s.deleteTask);
+  const reorderTask = useV2Store((s) => s.reorderTask);
   const fill = useV2Store((s) => s.fillGapsTool);
+  const [dragId, setDragId] = useState<string | null>(null);
   const cols = useMemo<ColumnDef<PersonalOSTask>[]>(() => [
     { accessorKey: 'done', header: 'Done', cell: ({ row }) => <input className="taskCheck" type="checkbox" checked={row.original.done} onChange={(e) => saveTask({ ...row.original, done: e.target.checked })} /> },
+    { id: 'drag', header: '', cell: () => <span className="dragHandle">⋮⋮</span> },
     { accessorKey: 'text', header: 'Task text', cell: ({ row }) => <input className="taskText" value={row.original.text} onChange={(e) => saveTask({ ...row.original, text: e.target.value })} /> },
-    { id: 'del', header: '', cell: ({ row }) => <button onClick={() => deleteTask(row.original.id)}>DELETE</button> },
+    { id: 'del', header: '', cell: ({ row }) => <button className="trashBtn" title="Delete task" onClick={() => deleteTask(row.original.id)}>🗑</button> },
   ], [deleteTask, saveTask]);
   const table = useReactTable({ data: tasks, columns: cols, getCoreRowModel: getCoreRowModel() });
-  return <section className="v1Panel"><div className="panelHead"><div><div className="panelTitle">To do list</div><div className="muted">Write duration in parentheses, for example: Research campaign (45 min) or CRO work (2 hours).</div></div><button onClick={addTask}>+ TASK</button></div><button className="iconRefresh" title="Update schedule" onClick={() => fill({ date: todayKey, start: '06:45', end: '22:30', includePast: false })}>↻</button><div className="tableWrap"><table className="taskTable"><thead>{table.getHeaderGroups().map((g) => <tr key={g.id}>{g.headers.map((h) => <th key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</th>)}</tr>)}</thead><tbody>{table.getRowModel().rows.map((row) => <tr key={row.id} className={row.original.done ? 'done' : ''}>{row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table></div></section>;
+  return <section className="v1Panel"><div className="panelHead"><div><div className="panelTitle">To do list</div><div className="muted">Write duration in parentheses, for example: Research campaign (45 min) or CRO work (2 hours).</div></div><button onClick={addTask}>+ TASK</button></div><button className="iconRefresh" title="Update schedule" onClick={() => fill({ date: todayKey, start: '06:45', end: '22:30', includePast: false })}>↻</button><div className="tableWrap"><table className="taskTable"><thead>{table.getHeaderGroups().map((g) => <tr key={g.id}>{g.headers.map((h) => <th key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</th>)}</tr>)}</thead><tbody>{table.getRowModel().rows.map((row) => <tr key={row.original.id} className={row.original.done ? 'done' : ''} draggable onDragStart={() => setDragId(row.original.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragId) reorderTask(dragId, row.original.id); setDragId(null); }}>{row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table></div></section>;
 }
 
 function dayHeader(date: Date) { return `${dayNames[date.getDay()]} (${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')})`; }
 function slotLabel(date: Date) { const h = date.getHours(); const m = date.getMinutes(); if (h === 6 && m === 45) return '06:45'; if (h === 7 && m === 0) return '07:00'; if (m === 0 && h >= 8 && h <= 22) return `${String(h).padStart(2, '0')}:00`; return ''; }
-function localTool(text: string, fill: (args: { date: string; start: string; end: string; includePast: boolean }) => { ok: boolean; reason?: string; changedEventCount?: number; scheduledTaskCount?: number }, undo: () => { ok: boolean; reason?: string }, deleteWorkEvents: (dates: string[]) => { ok: boolean; reason?: string; changedEventCount?: number }) { const lower = text.toLowerCase(); if (lower.includes('undo')) { const r = undo(); return r.ok ? 'Undone.' : r.reason ?? 'Nothing to undo.'; } if ((lower.includes('remove') || lower.includes('delete')) && lower.includes('work')) { const dates = lower.includes('weekend') ? weekendDates() : [todayKey]; const r = deleteWorkEvents(dates); return r.ok ? `Removed ${r.changedEventCount ?? 0} work block(s).` : r.reason ?? 'No changes made.'; } if (lower.includes('update') || lower.includes('fill') || lower.includes('schedule tasks')) { const r = fill({ date: todayKey, start: '06:45', end: '22:30', includePast: false }); return r.ok ? `${r.changedEventCount ?? 0} event(s) changed. ${r.scheduledTaskCount ?? 0} task(s) scheduled.` : r.reason ?? 'No changes made.'; } return null; }
+function localTool(text: string, fill: (args: { date: string; start: string; end: string; includePast: boolean }) => { ok: boolean; reason?: string; changedEventCount?: number; scheduledTaskCount?: number }, undo: () => { ok: boolean; reason?: string }, deleteMatching: (args: { query: string; dates?: string[]; allowProtected?: boolean }) => { ok: boolean; reason?: string; changedEventCount?: number }, moveMatching: (args: { query: string; dates?: string[]; start: string; end: string; allowProtected?: boolean }) => { ok: boolean; reason?: string; changedEventCount?: number }) { const lower = text.toLowerCase(); if (lower.includes('undo') || lower.includes('revert')) { const r = undo(); return r.ok ? 'Undone.' : r.reason ?? 'Nothing to undo.'; } const dates = parseDates(lower); if (lower.includes('remove') || lower.includes('delete')) { const r = deleteMatching({ query: lower, dates, allowProtected: true }); return r.ok ? `Removed ${r.changedEventCount ?? 0} block(s).` : r.reason ?? 'No changes made.'; } if (lower.includes('move')) { const times = [...lower.matchAll(/(\d{1,2}:\d{2})/g)].map((m) => m[1]); if (times.length >= 2) { const r = moveMatching({ query: lower, dates, start: times[0], end: times[1], allowProtected: false }); return r.ok ? `Moved ${r.changedEventCount ?? 0} block(s).` : r.reason ?? 'No changes made.'; } } if (lower.includes('update') || lower.includes('fill') || lower.includes('schedule tasks')) { const r = fill({ date: todayKey, start: '06:45', end: '22:30', includePast: false }); return r.ok ? `${r.changedEventCount ?? 0} event(s) changed. ${r.scheduledTaskCount ?? 0} task(s) scheduled.` : r.reason ?? 'No changes made.'; } return null; }
+function parseDates(text: string): string[] | undefined { if (text.includes('weekend')) return weekendDates(); if (text.includes('today')) return [todayKey]; const date = parseNamedDate(text); return date ? [date] : undefined; }
+function parseNamedDate(text: string): string | null { const match = text.match(/(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)/); if (!match) return null; const year = new Date().getFullYear(); const month = monthNames.indexOf(match[2]) + 1; return `${year}-${String(month).padStart(2, '0')}-${String(Number(match[1])).padStart(2, '0')}`; }
 function weekendDates() { const now = new Date(); const monday = new Date(now); const day = monday.getDay() || 7; monday.setDate(monday.getDate() - day + 1); return [5, 6].map((offset) => { const date = new Date(monday); date.setDate(monday.getDate() + offset); return dateKey(date); }); }
 function toCal(event: PersonalOSEvent, tick: number): EventInput { const c = event.color ?? eventTheme[event.kind]; return { id: event.id, title: event.title, start: event.start, end: event.end, groupId: event.groupId, editable: event.movable && !event.protected, startEditable: event.movable && !event.protected, durationEditable: event.movable && !event.protected, backgroundColor: c.background, borderColor: c.border, textColor: c.text, extendedProps: { ...event, tick } }; }
 function eventContent(arg: EventContentArg) { return <div className="eventInner"><div className="eventText"><div className="eventTime">{formatClock(arg.event.start!)}-{formatClock(arg.event.end!)}</div><div className="eventTitle">{arg.event.title}</div></div></div>; }
