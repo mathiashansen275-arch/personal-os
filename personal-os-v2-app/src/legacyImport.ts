@@ -5,6 +5,7 @@ import { addDays, dateKey, isoWeek, localDateTime, minutesToTime, startOfWeek, t
 
 const LEGACY_SCHEDULE_KEY = 'personalOS.schedule.v5';
 const LEGACY_TASKS_KEY = 'personalOS.tasks.v1';
+const LECTIO_SNAPSHOT_URL = 'https://raw.githubusercontent.com/mathiashansen275-arch/personal-os/179ba3a09d3b58a407428ecde3910bd14fd04bdc/lectio-data.js';
 
 type LegacySchedule = {
   custom?: Array<Record<string, unknown>>;
@@ -157,11 +158,32 @@ function legacyKind(value: string): EventKind {
   return 'task';
 }
 
-function loadLectioData(): Promise<LegacyLectio | null> {
-  if (window.LECTIO_DATA) return Promise.resolve(window.LECTIO_DATA);
+async function loadLectioData(): Promise<LegacyLectio | null> {
+  if (window.LECTIO_DATA?.school?.length) return window.LECTIO_DATA;
+  const fromSnapshot = await loadLectioSnapshot();
+  if (fromSnapshot?.school?.length) return fromSnapshot;
+  return loadLectioScript('/lectio-data.js?v=' + Date.now());
+}
+
+async function loadLectioSnapshot(): Promise<LegacyLectio | null> {
+  try {
+    const response = await fetch(LECTIO_SNAPSHOT_URL, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const code = await response.text();
+    const match = code.match(/window\.LECTIO_DATA\s*=\s*([\s\S]*?);\s*$/);
+    if (!match) return null;
+    const data = JSON.parse(match[1]) as LegacyLectio;
+    window.LECTIO_DATA = data;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function loadLectioScript(src: string): Promise<LegacyLectio | null> {
   return new Promise((resolve) => {
     const script = document.createElement('script');
-    script.src = '../lectio-data.js?v=' + Date.now();
+    script.src = src;
     script.onload = () => resolve(window.LECTIO_DATA || null);
     script.onerror = () => resolve(null);
     document.head.appendChild(script);
