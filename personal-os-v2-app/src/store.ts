@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { PersonalOSEvent, PersonalOSTask, ToolResult, UndoSnapshot } from './models';
 import { importLegacyData } from './legacyImport';
 import { createEvent, deleteEvent, fillGaps, moveEvent, resizeEvent, validateSchedule } from './scheduler';
+import { dateKey } from './time';
 
 const EVENTS_KEY = 'personalOS.v2.events';
 const TASKS_KEY = 'personalOS.v2.tasks';
@@ -37,6 +38,7 @@ type V2Store = {
   deleteTask: (id: string) => ToolResult;
   createEventTool: (event: Omit<PersonalOSEvent, 'id'> & { id?: string; includePast?: boolean }) => ToolResult;
   deleteEventTool: (id: string) => ToolResult;
+  deleteWorkEventsTool: (dates: string[]) => ToolResult;
   moveEventTool: (id: string, start: string, end: string, includePast?: boolean) => ToolResult;
   resizeEventTool: (id: string, end: string, start?: string, includePast?: boolean) => ToolResult;
   fillGapsTool: (args: FillGapsArgs) => ToolResult;
@@ -117,7 +119,6 @@ export const useV2Store = create<V2Store>((set, get) => ({
       text: 'New task',
       done: false,
       priority: 3,
-      estimatedMinutes: 60,
       kind: 'personal',
       scheduledEventIds: [],
     };
@@ -140,6 +141,17 @@ export const useV2Store = create<V2Store>((set, get) => ({
 
   createEventTool: (event) => mutateWithUndo('createEvent', get, set, (state) => createEvent(state, event)),
   deleteEventTool: (id) => mutateWithUndo('deleteEvent', get, set, (state) => deleteEvent(state, id)),
+  deleteWorkEventsTool: (dates) => {
+    const dateSet = new Set(dates);
+    const matching = get().events.filter((event) => event.kind === 'work' && dateSet.has(dateKey(event.start)));
+    if (!matching.length) return { ok: false, reason: 'No matching work blocks found.' };
+    pushUndo('deleteWorkEvents', get());
+    const ids = new Set(matching.map((event) => event.id));
+    const events = get().events.filter((event) => !ids.has(event.id));
+    persist(events, get().tasks, get().undo);
+    set({ events, selectedEventId: undefined });
+    return { ok: true, changedEventCount: matching.length };
+  },
   moveEventTool: (id, start, end, includePast) => mutateWithUndo('moveEvent', get, set, (state) => moveEvent(state, id, start, end, includePast)),
   resizeEventTool: (id, end, start, includePast) => mutateWithUndo('resizeEvent', get, set, (state) => resizeEvent(state, id, end, start, includePast)),
   fillGapsTool: (args) => mutateWithUndo('fillGaps', get, set, (state) => fillGaps(state, args)),
